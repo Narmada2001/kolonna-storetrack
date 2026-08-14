@@ -82,60 +82,53 @@ npm run dev
 
 Open http://localhost:5173 and log in with the admin credentials above.
 
-## Free demo hosting (Render + Vercel)
+## Free demo hosting (Neon + Render + Vercel)
 
 This gets you a public URL at no cost — good for showing mentors/staff a live demo. It is
 **not** suitable for the Secretariat's real production use (see the caveats below and §8 Cost
 Estimate in the proposal, which budgets paid hosting/domain for that). PostgreSQL is used here
-instead of MySQL only because it's what Render offers for free — the proposal explicitly lists
-"MySQL / PostgreSQL" as acceptable (§4.2), and the code is already database-agnostic.
+instead of MySQL only because it's what's available for free across these providers — the
+proposal explicitly lists "MySQL / PostgreSQL" as acceptable (§4.2), and the code is already
+database-agnostic.
 
-**1. Push this project to GitHub** (both Render and Vercel deploy from a Git repo):
+**1. Push this project to GitHub** (both Render and Vercel deploy from a Git repo) — already
+done if you followed along earlier in this project.
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
+**2. Database on [Neon](https://neon.tech)** (free forever tier, no card required)
 
-Create a new repo on GitHub, then:
+- Sign up (GitHub login works) → **Create a project** → name it `kolonna-storetrack`
+- On the project dashboard, copy the **connection string** shown (starts with `postgresql://`)
+- Change its scheme from `postgresql://` to `postgresql+psycopg2://` — SQLAlchemy needs the
+  `+psycopg2` driver suffix. This full string is your `DATABASE_URL` for the next step.
 
-```bash
-git remote add origin https://github.com/<you>/kolonna-storetrack.git
-git branch -M main
-git push -u origin main
-```
+**3. Backend on [Render](https://render.com)** (free, sign up with GitHub)
 
-**2. Backend + database on [Render](https://render.com)** (free, sign up with GitHub)
-
-- **New → PostgreSQL** → name it `kolonna-storetrack-db` → free plan → once created, copy the
-  "Internal Database URL".
 - **New → Web Service** → connect your GitHub repo → Root Directory: `backend`
   - Build Command: `pip install -r requirements.txt`
   - Start Command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
   - Environment variables:
-    - `DATABASE_URL` = the Postgres URL from above, but change its scheme from `postgres://`
-      to `postgresql+psycopg2://` (SQLAlchemy needs the `+psycopg2` driver suffix)
+    - `DATABASE_URL` = the Neon connection string from step 2 (with `+psycopg2` added)
     - `SECRET_KEY` = any long random string
-    - `CORS_ORIGINS` = your Vercel URL (you'll get this in step 3 — come back and set it after)
+    - `CORS_ORIGINS` = your Vercel URL (you'll get this in step 4 — come back and set it after)
   - Deploy. Once live, open the Render service's **Shell** tab and run `python -m app.seed`
     once to create the admin account and sample data.
 - Note the backend's public URL, e.g. `https://kolonna-storetrack-api.onrender.com`.
 
-**3. Frontend on [Vercel](https://vercel.com)** (free, sign up with GitHub)
+**4. Frontend on [Vercel](https://vercel.com)** (free, sign up with GitHub)
 
 - **New Project** → import the same repo → Root Directory: `frontend` (Vite is auto-detected)
-- Environment variable: `VITE_API_URL` = the Render backend URL from step 2
+- Environment variable: `VITE_API_URL` = the Render backend URL from step 3
 - Deploy. You'll get a URL like `https://kolonna-storetrack.vercel.app`.
 
-**4. Close the loop:** go back to the Render backend's environment variables, set
+**5. Close the loop:** go back to the Render backend's environment variables, set
 `CORS_ORIGINS` to the Vercel URL, and redeploy — otherwise the browser blocks requests with a
 CORS error.
 
 **Free-tier caveats:**
 - Render's free web service spins down after 15 minutes of inactivity; the first request after
   idling takes ~30-50s to wake back up.
-- Render's free Postgres database expires after 90 days — you'd recreate it and reseed.
+- Neon's free database auto-suspends after inactivity too, with a similar brief wake-up delay
+  on the next query — but unlike Render Postgres, it doesn't expire after a fixed number of days.
 - Neither tier is meant for real end-user reliability.
 
 ## What was verified
