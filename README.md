@@ -7,6 +7,8 @@ IS5109 Community Project proposal (`Community Project Group 18 (Approved ) (1).p
 - **Frontend:** React (Vite) + Tailwind CSS
 - **Modules:** User Management, Inventory Management, Request Management, Transaction & Supplier Management, Reporting
 
+> **New to this repo?** See [SETUP.md](SETUP.md) for a quick clone-to-running-app guide.
+
 ## Scope decision
 
 The proposal's use-case diagram includes a "Customer" actor and a "Register" flow, but the
