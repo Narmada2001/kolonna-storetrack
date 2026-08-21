@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
@@ -12,12 +13,22 @@ const STATUS_STYLES = {
 
 export default function Requests() {
   const { isAdmin } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
   const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    if (location.state?.openCreate) {
+      setShowCreate(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   async function loadRequests() {
     setLoading(true);

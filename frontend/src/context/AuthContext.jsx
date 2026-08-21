@@ -28,6 +28,29 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Keep every open tab in sync: the `storage` event fires in *other* tabs
+  // whenever one tab logs in/out, so a tab that's been open a while doesn't
+  // keep showing a stale user after a different tab switches accounts.
+  useEffect(() => {
+    function handleStorage(e) {
+      if (e.key !== "storetrack_token" && e.key !== "storetrack_user") return;
+      const token = localStorage.getItem("storetrack_token");
+      const storedUser = localStorage.getItem("storetrack_user");
+      if (!token || !storedUser) {
+        setUser(null);
+        return;
+      }
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        setUser(null);
+      }
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
   async function login(email, password) {
     const res = await client.post("/auth/login", { email, password });
     localStorage.setItem("storetrack_token", res.data.access_token);

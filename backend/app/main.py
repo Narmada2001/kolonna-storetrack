@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, users, items, suppliers, requests, transactions, reports
+from .routers import auth, users, items, suppliers, requests, transactions, reports, admin
 
 Base.metadata.create_all(bind=engine)
 
@@ -24,6 +24,7 @@ app.include_router(suppliers.router)
 app.include_router(requests.router)
 app.include_router(transactions.router)
 app.include_router(reports.router)
+app.include_router(admin.router)
 
 
 @app.get("/")

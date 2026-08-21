@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import StoreIllustration from "../components/StoreIllustration.jsx";
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice] = useState(
+    location.state?.reason === "idle" ? "You were signed out after 15 minutes of inactivity." : ""
+  );
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e) {
@@ -66,6 +70,11 @@ export default function Login() {
                 placeholder="••••••••"
               />
             </div>
+            {notice && !error && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                {notice}
+              </p>
+            )}
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="submit"

@@ -1,5 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import useIdleLogout from "../hooks/useIdleLogout.js";
+
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // auto-logout after 15 minutes of inactivity
 
 const navItems = [
   { to: "/", label: "Dashboard", adminOnly: false },
@@ -19,6 +22,11 @@ export default function Layout({ children }) {
     logout();
     navigate("/login");
   }
+
+  useIdleLogout(() => {
+    logout();
+    navigate("/login", { state: { reason: "idle" } });
+  }, IDLE_TIMEOUT_MS);
 
   return (
     <div className="flex min-h-screen">

@@ -1,5 +1,5 @@
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -42,6 +42,30 @@ def dashboard_stats(db: Session = Depends(get_db)):
         total_suppliers=suppliers,
         transactions_this_month=txns_this_month,
     )
+
+
+@router.get("/dashboard/transactions", response_model=list[schemas.TransactionTimeseriesPoint])
+def transactions_timeseries(days: int = 30, db: Session = Depends(get_db)):
+    """Daily received vs. issued quantity for the last `days` days (usage-pattern chart)."""
+    days = max(1, min(days, 365))
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=days - 1)
+    start_of_range = datetime(start.year, start.month, start.day)
+
+    buckets = {
+        (start + timedelta(days=i)).isoformat(): {"received": 0, "issued": 0} for i in range(days)
+    }
+
+    rows = db.query(Transaction).filter(Transaction.transaction_date >= start_of_range).all()
+    for t in rows:
+        key = t.transaction_date.date().isoformat()
+        if key in buckets:
+            buckets[key][t.type.value] += t.quantity
+
+    return [
+        schemas.TransactionTimeseriesPoint(date=date, received=v["received"], issued=v["issued"])
+        for date, v in buckets.items()
+    ]
 
 
 REPORT_BUILDERS = {}

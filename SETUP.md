@@ -139,6 +139,36 @@ that process, or run the backend with `uvicorn app.main:app --reload --port 8001
 shared with your teammates. If you want to reset it, stop the backend, delete
 `backend/storetrack.db`, and re-run `python -m app.seed`.
 
+## 6. Database backups
+
+The **Reports** page (admin only) has a "Backup Now" button that dumps the database to
+`backend/backups/` on demand. For it to satisfy "regular" backups rather than one-off manual
+ones, schedule the same script to run automatically:
+
+```bash
+# from the backend folder, with the virtual environment active
+python -m app.backup            # creates one timestamped backup now
+python -m app.backup --list     # lists existing backups
+```
+
+It dumps whichever database `DATABASE_URL` points at — SQLite is copied directly, MySQL uses
+`mysqldump`, PostgreSQL uses `pg_dump` (both must be on `PATH`) — and automatically keeps only
+the most recent 14 backups.
+
+**Linux/macOS (cron)** — back up every night at 2 AM:
+
+```cron
+0 2 * * * cd /path/to/kolonna-storetrack/backend && .venv/bin/python -m app.backup >> backup.log 2>&1
+```
+
+**Windows (Task Scheduler)** — create a daily task that runs:
+
+```
+Program:   C:\path\to\kolonna-storetrack\backend\.venv\Scripts\python.exe
+Arguments: -m app.backup
+Start in:  C:\path\to\kolonna-storetrack\backend
+```
+
 ## Project structure
 
 ```
