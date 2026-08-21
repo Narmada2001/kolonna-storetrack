@@ -164,3 +164,16 @@ class DashboardStats(BaseModel):
     pending_requests: int
     total_suppliers: int
     transactions_this_month: int
+
+
+class TransactionTimeseriesPoint(BaseModel):
+    date: str
+    received: int
+    issued: int
+
+
+# ---------- Admin / Backups ----------
+class BackupOut(BaseModel):
+    filename: str
+    size_bytes: int
+    created_at: datetime
