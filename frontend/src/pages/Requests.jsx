@@ -25,6 +25,9 @@ export default function Requests() {
   useEffect(() => {
     if (location.state?.openCreate) {
       setShowCreate(true);
+      if (location.state?.itemId) {
+        setForm((f) => ({ ...f, item_id: String(location.state.itemId) }));
+      }
       navigate(location.pathname, { replace: true, state: null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
