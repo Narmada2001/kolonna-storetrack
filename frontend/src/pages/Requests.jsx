@@ -113,7 +113,7 @@ export default function Requests() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-2xl font-bold text-gray-800">{isAdmin ? "All Item Requests" : "My Requests"}</h2>
         {!isAdmin && (
           <button
