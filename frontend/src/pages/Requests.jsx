@@ -4,6 +4,7 @@ import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
 import { IconClock, IconCheckCircle, IconBox, IconXCircle } from "../components/Icons.jsx";
+import { SkeletonRows } from "../components/Skeleton.jsx";
 
 const STATUS_STYLES = {
   pending: "bg-amber-100 text-amber-700",
@@ -39,7 +40,10 @@ export default function Requests() {
   const navigate = useNavigate();
   const [requests, setRequests] = useState([]);
   const [items, setItems] = useState([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [itemsError, setItemsError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
   const [busyId, setBusyId] = useState(null);
@@ -61,14 +65,29 @@ export default function Requests() {
     try {
       const res = await client.get("/requests");
       setRequests(res.data);
+      setError("");
+    } catch {
+      setError("Could not load requests.");
     } finally {
       setLoading(false);
     }
   }
 
+  function loadItemOptions() {
+    setItemsLoading(true);
+    client
+      .get("/items")
+      .then((res) => {
+        setItems(res.data);
+        setItemsError("");
+      })
+      .catch(() => setItemsError("Could not load the item list."))
+      .finally(() => setItemsLoading(false));
+  }
+
   useEffect(() => {
     loadRequests();
-    client.get("/items").then((res) => setItems(res.data));
+    loadItemOptions();
   }, []);
 
   async function handleCreate(e) {
@@ -125,6 +144,15 @@ export default function Requests() {
         )}
       </div>
 
+      {error && (
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={loadRequests} className="font-medium underline hover:no-underline">
+            Try again
+          </button>
+        </div>
+      )}
+
       {!isAdmin && (
         <div className="mb-4 flex flex-wrap gap-2">
           {STATUS_TABS.map((tab) => {
@@ -158,23 +186,39 @@ export default function Requests() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading && <SkeletonRows rows={4} columns={colCount} />}
+            {!loading && !error && filteredRequests.length === 0 && (
               <tr>
-                <td colSpan={colCount} className="px-4 py-6 text-center text-gray-400">
-                  Loading...
+                <td colSpan={colCount} className="px-4 py-10 text-center">
+                  {requests.length === 0 ? (
+                    <>
+                      <p className="text-gray-400">
+                        {isAdmin ? "No requests found." : "You haven't made any requests yet."}
+                      </p>
+                      {!isAdmin && (
+                        <button
+                          onClick={() => setShowCreate(true)}
+                          className="mt-3 rounded-md bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700"
+                        >
+                          + New Request
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-400">No {statusFilter} requests.</p>
+                      <button
+                        onClick={() => setStatusFilter("all")}
+                        className="mt-2 text-xs font-medium text-brand-600 hover:underline"
+                      >
+                        Show all requests
+                      </button>
+                    </>
+                  )}
                 </td>
               </tr>
             )}
-            {!loading && filteredRequests.length === 0 && (
-              <tr>
-                <td colSpan={colCount} className="px-4 py-6 text-center text-gray-400">
-                  {requests.length === 0
-                    ? "No requests found."
-                    : `No ${statusFilter} requests.`}
-                </td>
-              </tr>
-            )}
-            {filteredRequests.map((r) => {
+            {!loading && filteredRequests.map((r) => {
               const StatusIcon = STATUS_ICONS[r.status];
               return (
               <tr key={r.id} className="border-t border-gray-100">
@@ -247,17 +291,32 @@ export default function Requests() {
               <label className="block text-xs font-medium text-gray-600 mb-1">Item</label>
               <select
                 required
+                disabled={itemsLoading || items.length === 0}
                 value={form.item_id}
                 onChange={(e) => setForm({ ...form, item_id: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400"
               >
-                <option value="">Select an item...</option>
-                {items.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.quantity_in_stock} in stock)
-                  </option>
-                ))}
+                {itemsLoading && <option value="">Loading items...</option>}
+                {!itemsLoading && items.length === 0 && <option value="">No items available</option>}
+                {!itemsLoading && items.length > 0 && (
+                  <>
+                    <option value="">Select an item...</option>
+                    {items.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name} ({i.quantity_in_stock} in stock)
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
+              {itemsError && (
+                <p className="mt-1 text-xs text-red-600">
+                  {itemsError}{" "}
+                  <button type="button" onClick={loadItemOptions} className="underline hover:no-underline">
+                    Retry
+                  </button>
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>

@@ -4,6 +4,7 @@ import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import TransactionsChart from "../components/TransactionsChart.jsx";
 import MyRequestsChart from "../components/MyRequestsChart.jsx";
+import { SkeletonBlock, SkeletonRows } from "../components/Skeleton.jsx";
 import {
   IconClock,
   IconCheckCircle,
@@ -131,8 +132,8 @@ export default function Dashboard() {
       });
   }, [isAdmin]);
 
-  useEffect(() => {
-    if (isAdmin) return;
+  function loadEmployeeData() {
+    setError("");
     client
       .get("/requests")
       .then((res) => setMyRequests(res.data))
@@ -143,6 +144,12 @@ export default function Dashboard() {
       .catch(() => {
         // non-fatal: the rest of the dashboard still works without this widget
       });
+  }
+
+  useEffect(() => {
+    if (isAdmin) return;
+    loadEmployeeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
   const myCounts = (myRequests || []).reduce(
@@ -195,7 +202,14 @@ export default function Dashboard() {
 
       {!isAdmin && (
         <div className="mt-6">
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && (
+            <div className="mb-4 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+              <span>{error}</span>
+              <button onClick={loadEmployeeData} className="font-medium underline hover:no-underline">
+                Try again
+              </button>
+            </div>
+          )}
 
           {/* Quick actions */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -218,17 +232,53 @@ export default function Dashboard() {
           </div>
 
           {!myRequests && !error && (
-            <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {MY_CARD_STYLES.map((card) => (
-                <div
-                  key={card.key}
-                  className="h-[92px] rounded-lg bg-white border border-gray-200 p-5 shadow-sm animate-pulse"
-                >
-                  <div className="h-3 w-16 rounded bg-gray-100" />
-                  <div className="mt-3 h-6 w-10 rounded bg-gray-100" />
+            <>
+              <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {MY_CARD_STYLES.map((card) => (
+                  <div
+                    key={card.key}
+                    className="h-[92px] rounded-lg bg-white border border-gray-200 p-5 shadow-sm animate-pulse"
+                  >
+                    <div className="h-3 w-16 rounded bg-gray-100" />
+                    <div className="mt-3 h-6 w-10 rounded bg-gray-100" />
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                  <SkeletonBlock className="h-4 w-40" />
+                  <SkeletonBlock className="mt-4 h-[160px] w-full" />
                 </div>
-              ))}
-            </div>
+                <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                  <SkeletonBlock className="h-4 w-24" />
+                  <div className="mt-4 space-y-3">
+                    <SkeletonBlock className="h-4 w-full" />
+                    <SkeletonBlock className="h-4 w-full" />
+                    <SkeletonBlock className="h-4 w-3/4" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <SkeletonBlock className="h-6 w-40 mb-3" />
+                <div className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-100 text-left text-gray-600">
+                      <tr>
+                        <th className="px-4 py-3">Item</th>
+                        <th className="px-4 py-3">Qty</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Requested On</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <SkeletonRows rows={3} columns={4} />
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
 
           {myRequests && (
