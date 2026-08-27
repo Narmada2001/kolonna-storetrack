@@ -1,14 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
+import { IconClock, IconCheckCircle, IconBox, IconXCircle } from "../components/Icons.jsx";
 
 const STATUS_STYLES = {
   pending: "bg-amber-100 text-amber-700",
   approved: "bg-blue-100 text-blue-700",
   rejected: "bg-red-100 text-red-700",
   fulfilled: "bg-emerald-100 text-emerald-700",
+};
+
+const STATUS_ICONS = {
+  pending: IconClock,
+  approved: IconCheckCircle,
+  fulfilled: IconBox,
+  rejected: IconXCircle,
+};
+
+const STATUS_TABS = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending" },
+  { key: "approved", label: "Approved" },
+  { key: "fulfilled", label: "Fulfilled" },
+  { key: "rejected", label: "Rejected" },
+];
+
+const RESPONSE_LABEL = {
+  fulfilled: "Fulfilled",
+  rejected: "Rejected",
+  approved: "Approved",
 };
 
 export default function Requests() {
@@ -21,6 +43,7 @@ export default function Requests() {
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
   const [busyId, setBusyId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     if (location.state?.openCreate) {
@@ -76,6 +99,18 @@ export default function Requests() {
     }
   }
 
+  const statusCounts = useMemo(
+    () => requests.reduce((acc, r) => ({ ...acc, [r.status]: (acc[r.status] || 0) + 1 }), {}),
+    [requests]
+  );
+
+  const filteredRequests = useMemo(
+    () => (statusFilter === "all" ? requests : requests.filter((r) => r.status === statusFilter)),
+    [requests, statusFilter]
+  );
+
+  const colCount = isAdmin ? 6 : 4;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -89,6 +124,26 @@ export default function Requests() {
           </button>
         )}
       </div>
+
+      {!isAdmin && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {STATUS_TABS.map((tab) => {
+            const count = tab.key === "all" ? requests.length : statusCounts[tab.key] || 0;
+            const active = statusFilter === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setStatusFilter(tab.key)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  active ? "bg-brand-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                {tab.label} {count > 0 && <span className={active ? "opacity-80" : "text-gray-400"}>({count})</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
@@ -105,29 +160,48 @@ export default function Requests() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
+                <td colSpan={colCount} className="px-4 py-6 text-center text-gray-400">
                   Loading...
                 </td>
               </tr>
             )}
-            {!loading && requests.length === 0 && (
+            {!loading && filteredRequests.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                  No requests found.
+                <td colSpan={colCount} className="px-4 py-6 text-center text-gray-400">
+                  {requests.length === 0
+                    ? "No requests found."
+                    : `No ${statusFilter} requests.`}
                 </td>
               </tr>
             )}
-            {requests.map((r) => (
+            {filteredRequests.map((r) => {
+              const StatusIcon = STATUS_ICONS[r.status];
+              return (
               <tr key={r.id} className="border-t border-gray-100">
                 <td className="px-4 py-3 font-medium text-gray-800">{r.item_name}</td>
                 {isAdmin && <td className="px-4 py-3 text-gray-600">{r.employee_name}</td>}
                 <td className="px-4 py-3">{r.quantity}</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[r.status]}`}>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[r.status]}`}
+                  >
+                    {StatusIcon && <StatusIcon className="h-3 w-3" />}
                     {r.status}
                   </span>
+                  {r.admin_note && (
+                    <p className="mt-1 max-w-[240px] text-xs italic text-gray-500" title={r.admin_note}>
+                      “{r.admin_note}”
+                    </p>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-gray-500">{new Date(r.request_date).toLocaleString()}</td>
+                <td className="px-4 py-3 text-gray-500">
+                  {new Date(r.request_date).toLocaleString()}
+                  {r.response_date && (
+                    <p className="text-xs text-gray-400">
+                      {RESPONSE_LABEL[r.status] || "Updated"}: {new Date(r.response_date).toLocaleDateString()}
+                    </p>
+                  )}
+                </td>
                 {isAdmin && (
                   <td className="px-4 py-3 space-x-3">
                     {r.status === "pending" && (
@@ -160,7 +234,8 @@ export default function Requests() {
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

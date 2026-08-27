@@ -326,22 +326,36 @@ export default function Dashboard() {
                           </td>
                         </tr>
                       )}
-                      {myRequests.slice(0, 5).map((r) => (
+                      {myRequests.slice(0, 5).map((r) => {
+                        const StatusIcon = CARD_ICONS[r.status];
+                        return (
                         <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-800">{r.item_name}</td>
                           <td className="px-4 py-3">{r.quantity}</td>
                           <td className="px-4 py-3">
                             <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[r.status]}`}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[r.status]}`}
                             >
+                              {StatusIcon && <StatusIcon className="h-3 w-3" />}
                               {r.status}
                             </span>
+                            {r.admin_note && (
+                              <p className="mt-1 max-w-[220px] text-xs italic text-gray-500" title={r.admin_note}>
+                                “{r.admin_note}”
+                              </p>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-gray-500">
                             {new Date(r.request_date).toLocaleString()}
+                            {r.response_date && (
+                              <p className="text-xs text-gray-400">
+                                Updated: {new Date(r.response_date).toLocaleDateString()}
+                              </p>
+                            )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
