@@ -60,12 +60,111 @@ const STATUS_STYLES = {
   fulfilled: "bg-emerald-100 text-emerald-700",
 };
 
+const CARD_ICONS = {
+  pending: (props) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 7v5l3.5 2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  approved: (props) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 12.5l2.3 2.3L15.5 9.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  fulfilled: (props) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <path d="M3.5 8l8.5-4 8.5 4-8.5 4-8.5-4z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 8v8l8.5 4 8.5-4V8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 12v8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  rejected: (props) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.5 9.5l5 5m0-5l-5 5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+};
+
+const CARD_ICON_BG = {
+  pending: "bg-orange-50 text-orange-600",
+  approved: "bg-blue-50 text-blue-600",
+  fulfilled: "bg-emerald-50 text-emerald-600",
+  rejected: "bg-red-50 text-red-600",
+};
+
+function IconInventory(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <path d="M3.5 8l8.5-4 8.5 4-8.5 4-8.5-4z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.5 8v8l8.5 4 8.5-4V8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconList(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <path d="M8 6h12M8 12h12M8 18h12" strokeLinecap="round" />
+      <circle cx="4" cy="6" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="18" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IconPlus(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconAlertTriangle(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
+      <path d="M12 4.5l9 15.5H3l9-15.5z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 10v4" strokeLinecap="round" />
+      <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+const QUICK_ACTIONS = [
+  {
+    to: "/requests",
+    state: { openCreate: true },
+    label: "New Request",
+    desc: "Ask for an item",
+    icon: IconPlus,
+    accent: "bg-brand-600 text-white hover:bg-brand-700",
+  },
+  {
+    to: "/inventory",
+    label: "Browse Inventory",
+    desc: "Check what's in stock",
+    icon: IconInventory,
+    accent: "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50",
+  },
+  {
+    to: "/requests",
+    label: "All My Requests",
+    desc: "Track request status",
+    icon: IconList,
+    accent: "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50",
+  },
+];
+
 export default function Dashboard() {
   const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
   const [myRequests, setMyRequests] = useState(null);
   const [timeseries, setTimeseries] = useState(null);
+  const [lowStockItems, setLowStockItems] = useState(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -87,6 +186,12 @@ export default function Dashboard() {
       .get("/requests")
       .then((res) => setMyRequests(res.data))
       .catch(() => setError("Could not load your requests."));
+    client
+      .get("/items", { params: { low_stock_only: true } })
+      .then((res) => setLowStockItems(res.data))
+      .catch(() => {
+        // non-fatal: the rest of the dashboard still works without this widget
+      });
   }, [isAdmin]);
 
   const myCounts = (myRequests || []).reduce(
@@ -99,26 +204,20 @@ export default function Dashboard() {
     [myRequests]
   );
 
+  const todayLabel = useMemo(
+    () => new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+    []
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Welcome, {user?.full_name}</h2>
           <p className="text-gray-500 mt-1">
-            {isAdmin
-              ? "Here's an overview of the store."
-              : "Use the sidebar to browse inventory and manage your item requests."}
+            {isAdmin ? "Here's an overview of the store." : todayLabel}
           </p>
         </div>
-        {!isAdmin && (
-          <Link
-            to="/requests"
-            state={{ openCreate: true }}
-            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-          >
-            + New Request
-          </Link>
-        )}
       </div>
 
       {isAdmin && (
@@ -146,26 +245,111 @@ export default function Dashboard() {
       {!isAdmin && (
         <div className="mt-6">
           {error && <p className="text-red-600 text-sm">{error}</p>}
-          {!myRequests && !error && <p className="text-gray-400 text-sm">Loading your requests...</p>}
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {QUICK_ACTIONS.map((action) => (
+              <Link
+                key={action.label}
+                to={action.to}
+                state={action.state}
+                className={`flex items-center gap-3 rounded-lg p-4 shadow-sm transition ${action.accent}`}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-black/5">
+                  <action.icon className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-sm font-semibold">{action.label}</span>
+                  <span className="block text-xs opacity-80">{action.desc}</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          {!myRequests && !error && (
+            <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {MY_CARD_STYLES.map((card) => (
+                <div
+                  key={card.key}
+                  className="h-[92px] rounded-lg bg-white border border-gray-200 p-5 shadow-sm animate-pulse"
+                >
+                  <div className="h-3 w-16 rounded bg-gray-100" />
+                  <div className="mt-3 h-6 w-10 rounded bg-gray-100" />
+                </div>
+              ))}
+            </div>
+          )}
+
           {myRequests && (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {MY_CARD_STYLES.map((card) => (
-                  <div key={card.key} className="rounded-lg bg-white border border-gray-200 p-5 shadow-sm">
-                    <p className="text-sm text-gray-500">{card.label}</p>
-                    <p className={`text-3xl font-bold mt-2 ${card.accent}`}>{myCounts[card.key] || 0}</p>
-                  </div>
-                ))}
+              <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {MY_CARD_STYLES.map((card) => {
+                  const Icon = CARD_ICONS[card.key];
+                  return (
+                    <div
+                      key={card.key}
+                      className="flex items-start gap-3 rounded-lg bg-white border border-gray-200 p-5 shadow-sm"
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${CARD_ICON_BG[card.key]}`}>
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <span>
+                        <p className="text-sm text-gray-500">{card.label}</p>
+                        <p className={`text-3xl font-bold mt-1 ${card.accent}`}>{myCounts[card.key] || 0}</p>
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
-              {myRequestSeries && (
-                <div className="mt-6">
-                  <MyRequestsChart data={myRequestSeries} />
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {myRequestSeries && (
+                  <div className="lg:col-span-2">
+                    <MyRequestsChart data={myRequestSeries} />
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <IconAlertTriangle className="h-4 w-4 text-amber-600" />
+                    <h3 className="font-semibold text-gray-800">Running Low</h3>
+                  </div>
+                  {!lowStockItems && (
+                    <p className="text-xs text-gray-400">Checking stock levels...</p>
+                  )}
+                  {lowStockItems && lowStockItems.length === 0 && (
+                    <p className="text-xs text-gray-400">Everything is well stocked right now.</p>
+                  )}
+                  {lowStockItems && lowStockItems.length > 0 && (
+                    <ul className="space-y-2.5">
+                      {lowStockItems.slice(0, 5).map((item) => (
+                        <li key={item.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="text-gray-700 truncate">{item.name}</span>
+                          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                            {item.quantity_in_stock} {item.unit} left
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {lowStockItems && lowStockItems.length > 0 && (
+                    <Link
+                      to="/inventory"
+                      className="mt-4 block text-center text-xs font-medium text-brand-600 hover:underline"
+                    >
+                      View full inventory →
+                    </Link>
+                  )}
                 </div>
-              )}
+              </div>
 
               <div className="mt-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">Recent Requests</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-gray-800">Recent Requests</h3>
+                  <Link to="/requests" className="text-sm font-medium text-brand-600 hover:underline">
+                    View all →
+                  </Link>
+                </div>
                 <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-100 text-left text-gray-600">
@@ -179,13 +363,20 @@ export default function Dashboard() {
                     <tbody>
                       {myRequests.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-4 py-6 text-center text-gray-400">
-                            You haven't made any requests yet.
+                          <td colSpan={4} className="px-4 py-10 text-center">
+                            <p className="text-gray-400">You haven't made any requests yet.</p>
+                            <Link
+                              to="/requests"
+                              state={{ openCreate: true }}
+                              className="mt-3 inline-block rounded-md bg-brand-600 px-4 py-2 text-xs font-semibold text-white hover:bg-brand-700"
+                            >
+                              + New Request
+                            </Link>
                           </td>
                         </tr>
                       )}
                       {myRequests.slice(0, 5).map((r) => (
-                        <tr key={r.id} className="border-t border-gray-100">
+                        <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-gray-800">{r.item_name}</td>
                           <td className="px-4 py-3">{r.quantity}</td>
                           <td className="px-4 py-3">
