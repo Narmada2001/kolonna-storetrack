@@ -4,6 +4,7 @@ import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
 import { IconSearch, IconPlus } from "../components/Icons.jsx";
+import { SkeletonRows } from "../components/Skeleton.jsx";
 
 const emptyForm = {
   name: "",
@@ -203,11 +204,20 @@ export default function Inventory() {
         )}
       </div>
 
-      <p className="mb-4 text-xs text-gray-500">
-        {loading ? "Loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"} found`}
-      </p>
+      {!error && (
+        <p className="mb-4 text-xs text-gray-500">
+          {loading ? "Loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"} found`}
+        </p>
+      )}
 
-      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+      {error && (
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={loadItems} className="font-medium underline hover:no-underline">
+            Try again
+          </button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
@@ -223,18 +233,12 @@ export default function Inventory() {
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                  Loading...
-                </td>
-              </tr>
-            )}
-            {!loading && sortedItems.length === 0 && (
+            {loading && <SkeletonRows rows={5} columns={7} />}
+            {!loading && !error && sortedItems.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center">
                   <p className="text-gray-400">
-                    {hasActiveFilters ? "No items match your filters." : "No items found."}
+                    {hasActiveFilters ? "No items match your filters." : "No items in inventory yet."}
                   </p>
                   {hasActiveFilters && (
                     <button
@@ -247,7 +251,7 @@ export default function Inventory() {
                 </td>
               </tr>
             )}
-            {sortedItems.map((item) => (
+            {!loading && sortedItems.map((item) => (
               <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.category || "-"}</td>
