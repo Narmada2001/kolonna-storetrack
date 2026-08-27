@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import Modal from "../components/Modal.jsx";
+import { IconSearch, IconPlus } from "../components/Icons.jsx";
+import { SkeletonRows } from "../components/Skeleton.jsx";
 
 const emptyForm = {
   name: "",
@@ -13,10 +16,28 @@ const emptyForm = {
   unit_price: 0,
 };
 
+const SORT_OPTIONS = [
+  { value: "name", label: "Sort: Name (A–Z)" },
+  { value: "stock_asc", label: "Sort: Stock (Low → High)" },
+  { value: "stock_desc", label: "Sort: Stock (High → Low)" },
+];
+
+function sortItems(items, sortBy) {
+  const arr = [...items];
+  if (sortBy === "stock_asc") arr.sort((a, b) => a.quantity_in_stock - b.quantity_in_stock);
+  else if (sortBy === "stock_desc") arr.sort((a, b) => b.quantity_in_stock - a.quantity_in_stock);
+  else arr.sort((a, b) => a.name.localeCompare(b.name));
+  return arr;
+}
+
 export default function Inventory() {
   const { isAdmin } = useAuth();
   const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("name");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalItem, setModalItem] = useState(null); // null = closed, {} = create, {...} = edit
@@ -26,8 +47,13 @@ export default function Inventory() {
   async function loadItems() {
     setLoading(true);
     try {
-      const res = await client.get("/items", { params: search ? { search } : {} });
+      const params = {};
+      if (search) params.search = search;
+      if (category) params.category = category;
+      if (lowStockOnly) params.low_stock_only = true;
+      const res = await client.get("/items", { params });
       setItems(res.data);
+      setError("");
     } catch {
       setError("Could not load inventory.");
     } finally {
@@ -39,7 +65,30 @@ export default function Inventory() {
     const timer = setTimeout(loadItems, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, category, lowStockOnly]);
+
+  // Full category list, independent of the current filters, so choosing one
+  // category doesn't make the others disappear from the dropdown.
+  useEffect(() => {
+    client
+      .get("/items")
+      .then((res) => {
+        const unique = [...new Set(res.data.map((i) => i.category).filter(Boolean))].sort();
+        setCategories(unique);
+      })
+      .catch(() => {
+        // non-fatal: the category filter just stays empty
+      });
+  }, []);
+
+  const sortedItems = useMemo(() => sortItems(items, sortBy), [items, sortBy]);
+  const hasActiveFilters = Boolean(search || category || lowStockOnly);
+
+  function clearFilters() {
+    setSearch("");
+    setCategory("");
+    setLowStockOnly(false);
+  }
 
   function openCreate() {
     setForm(emptyForm);
@@ -89,7 +138,7 @@ export default function Inventory() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Inventory</h2>
         {isAdmin && (
           <button
@@ -101,15 +150,74 @@ export default function Inventory() {
         )}
       </div>
 
-      <input
-        type="text"
-        placeholder="Search items..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="mb-4 w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
-      />
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-sm">
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search items..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none"
+          />
+        </div>
 
-      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          <option value="">All Categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          {SORT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        <label className="inline-flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={lowStockOnly}
+            onChange={(e) => setLowStockOnly(e.target.checked)}
+            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+          />
+          Low stock only
+        </label>
+
+        {hasActiveFilters && (
+          <button onClick={clearFilters} className="text-sm font-medium text-brand-600 hover:underline">
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {!error && (
+        <p className="mb-4 text-xs text-gray-500">
+          {loading ? "Loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"} found`}
+        </p>
+      )}
+
+      {error && (
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={loadItems} className="font-medium underline hover:no-underline">
+            Try again
+          </button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
@@ -121,26 +229,30 @@ export default function Inventory() {
               <th className="px-4 py-3">Reorder Level</th>
               <th className="px-4 py-3">Unit Price</th>
               <th className="px-4 py-3">Status</th>
-              {isAdmin && <th className="px-4 py-3">Actions</th>}
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {loading && <SkeletonRows rows={5} columns={7} />}
+            {!loading && !error && sortedItems.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                  Loading...
+                <td colSpan={7} className="px-4 py-10 text-center">
+                  <p className="text-gray-400">
+                    {hasActiveFilters ? "No items match your filters." : "No items in inventory yet."}
+                  </p>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="mt-2 text-xs font-medium text-brand-600 hover:underline"
+                    >
+                      Clear filters
+                    </button>
+                  )}
                 </td>
               </tr>
             )}
-            {!loading && items.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                  No items found.
-                </td>
-              </tr>
-            )}
-            {items.map((item) => (
-              <tr key={item.id} className="border-t border-gray-100">
+            {!loading && sortedItems.map((item) => (
+              <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.category || "-"}</td>
                 <td className="px-4 py-3">
@@ -159,16 +271,27 @@ export default function Inventory() {
                     </span>
                   )}
                 </td>
-                {isAdmin && (
-                  <td className="px-4 py-3 space-x-3">
-                    <button onClick={() => openEdit(item)} className="text-brand-600 hover:underline">
-                      Edit
-                    </button>
-                    <button onClick={() => handleDelete(item)} className="text-red-600 hover:underline">
-                      Delete
-                    </button>
-                  </td>
-                )}
+                <td className="px-4 py-3">
+                  {isAdmin ? (
+                    <div className="space-x-3">
+                      <button onClick={() => openEdit(item)} className="text-brand-600 hover:underline">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDelete(item)} className="text-red-600 hover:underline">
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <Link
+                      to="/requests"
+                      state={{ openCreate: true, itemId: item.id }}
+                      className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline"
+                    >
+                      <IconPlus className="h-3.5 w-3.5" />
+                      Request
+                    </Link>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
