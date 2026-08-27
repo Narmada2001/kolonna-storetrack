@@ -4,6 +4,16 @@ import client from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import TransactionsChart from "../components/TransactionsChart.jsx";
 import MyRequestsChart from "../components/MyRequestsChart.jsx";
+import {
+  IconClock,
+  IconCheckCircle,
+  IconBox,
+  IconXCircle,
+  IconAlertTriangle,
+  IconInventory,
+  IconList,
+  IconPlus,
+} from "../components/Icons.jsx";
 
 const REQUEST_CHART_DAYS = 30;
 
@@ -61,31 +71,10 @@ const STATUS_STYLES = {
 };
 
 const CARD_ICONS = {
-  pending: (props) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 7v5l3.5 2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  approved: (props) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M8.5 12.5l2.3 2.3L15.5 9.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  fulfilled: (props) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <path d="M3.5 8l8.5-4 8.5 4-8.5 4-8.5-4z" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3.5 8v8l8.5 4 8.5-4V8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 12v8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  rejected: (props) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <circle cx="12" cy="12" r="9" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9.5 9.5l5 5m0-5l-5 5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
+  pending: IconClock,
+  approved: IconCheckCircle,
+  fulfilled: IconBox,
+  rejected: IconXCircle,
 };
 
 const CARD_ICON_BG = {
@@ -94,44 +83,6 @@ const CARD_ICON_BG = {
   fulfilled: "bg-emerald-50 text-emerald-600",
   rejected: "bg-red-50 text-red-600",
 };
-
-function IconInventory(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <path d="M3.5 8l8.5-4 8.5 4-8.5 4-8.5-4z" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3.5 8v8l8.5 4 8.5-4V8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function IconList(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <path d="M8 6h12M8 12h12M8 18h12" strokeLinecap="round" />
-      <circle cx="4" cy="6" r="1.25" fill="currentColor" stroke="none" />
-      <circle cx="4" cy="12" r="1.25" fill="currentColor" stroke="none" />
-      <circle cx="4" cy="18" r="1.25" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function IconPlus(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconAlertTriangle(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <path d="M12 4.5l9 15.5H3l9-15.5z" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 10v4" strokeLinecap="round" />
-      <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
 
 const QUICK_ACTIONS = [
   {
