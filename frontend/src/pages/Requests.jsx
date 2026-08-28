@@ -96,10 +96,15 @@ export default function Requests() {
   async function handleCreate(e) {
     e.preventDefault();
     if (creating) return;
+    const quantity = Number(form.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setCreateError("Quantity must be a positive whole number.");
+      return;
+    }
     setCreating(true);
     setCreateError("");
     try {
-      await client.post("/requests", { item_id: Number(form.item_id), quantity: Number(form.quantity) });
+      await client.post("/requests", { item_id: Number(form.item_id), quantity });
       setShowCreate(false);
       setForm({ item_id: "", quantity: 1 });
       loadRequests();
@@ -356,6 +361,7 @@ export default function Requests() {
               <input
                 type="number"
                 min="1"
+                step="1"
                 required
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}

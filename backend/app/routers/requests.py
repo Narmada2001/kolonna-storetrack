@@ -49,9 +49,6 @@ def create_request(
     item = db.query(Item).filter(Item.id == payload.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
-
     req = ItemRequest(
         employee_id=current_user.id,
         item_id=payload.item_id,
@@ -130,7 +127,12 @@ def fulfill_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    req = db.query(ItemRequest).filter(ItemRequest.id == request_id).first()
+    req = (
+        db.query(ItemRequest)
+        .filter(ItemRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != RequestStatus.approved:
@@ -138,7 +140,12 @@ def fulfill_request(
             status_code=400, detail="Only approved requests can be fulfilled"
         )
 
-    item = db.query(Item).filter(Item.id == req.item_id).first()
+    item = (
+        db.query(Item)
+        .filter(Item.id == req.item_id)
+        .with_for_update()
+        .first()
+    )
     if item.quantity_in_stock < req.quantity:
         raise HTTPException(status_code=400, detail="Not enough stock to fulfill this request")
 

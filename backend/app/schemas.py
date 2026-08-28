@@ -1,8 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import UserRole, RequestStatus, TransactionType
 
@@ -110,7 +110,7 @@ class SupplierOut(SupplierBase):
 # ---------- Item Request ----------
 class ItemRequestCreate(BaseModel):
     item_id: int
-    quantity: int
+    quantity: Annotated[int, Field(strict=True, gt=0)]
 
 
 class ItemRequestDecision(BaseModel):
