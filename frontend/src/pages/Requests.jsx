@@ -44,6 +44,7 @@ export default function Requests() {
   const [itemsError, setItemsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState(null);
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
   const [createError, setCreateError] = useState("");
@@ -63,12 +64,13 @@ export default function Requests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  async function loadRequests() {
+  async function loadRequests(announce = false) {
     setLoading(true);
     try {
       const res = await client.get("/requests");
       setRequests(res.data);
       setError("");
+      if (announce) setFeedback({ type: "success", message: "Requests refreshed." });
     } catch {
       setError("Could not load requests.");
     } finally {
@@ -76,13 +78,14 @@ export default function Requests() {
     }
   }
 
-  function loadItemOptions() {
+  function loadItemOptions(announce = false) {
     setItemsLoading(true);
     client
       .get("/items")
       .then((res) => {
         setItems(res.data);
         setItemsError("");
+        if (announce) setFeedback({ type: "success", message: "Item list refreshed." });
       })
       .catch(() => setItemsError("Could not load the item list."))
       .finally(() => setItemsLoading(false));
@@ -107,9 +110,12 @@ export default function Requests() {
       await client.post("/requests", { item_id: Number(form.item_id), quantity });
       setShowCreate(false);
       setForm({ item_id: "", quantity: 1 });
-      loadRequests();
+      await loadRequests();
+      setFeedback({ type: "success", message: "Item request submitted successfully." });
     } catch (err) {
-      setCreateError(err.response?.data?.detail || "Failed to create request");
+      const message = err.response?.data?.detail || "Failed to create request";
+      setCreateError(message);
+      setFeedback({ type: "error", message });
     } finally {
       setCreating(false);
     }
@@ -142,12 +148,19 @@ export default function Requests() {
         await client.post(`/requests/${request.id}/${action}`, { admin_note: note.trim() || null });
       }
       setDecision(null);
-      loadRequests();
+      await loadRequests();
+      const actionLabels = { approve: "approved", reject: "rejected", fulfill: "fulfilled" };
+      setFeedback({
+        type: "success",
+        message: `Request ${actionLabels[action]} successfully.`,
+      });
     } catch (err) {
+      const message = err.response?.data?.detail || `Failed to ${action} request`;
       setDecision((current) => ({
         ...current,
-        error: err.response?.data?.detail || `Failed to ${action} request`,
+        error: message,
       }));
+      setFeedback({ type: "error", message });
     } finally {
       setBusyId(null);
     }
@@ -179,10 +192,26 @@ export default function Requests() {
         )}
       </div>
 
+      {feedback && (
+        <div
+          role={feedback.type === "error" ? "alert" : "status"}
+          className={`mb-4 flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm ${
+            feedback.type === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          <span>{feedback.message}</span>
+          <button type="button" onClick={() => setFeedback(null)} className="font-semibold" aria-label="Dismiss message">
+            &times;
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           <span>{error}</span>
-          <button onClick={loadRequests} className="font-medium underline hover:no-underline">
+          <button onClick={() => loadRequests(true)} className="font-medium underline hover:no-underline">
             Try again
           </button>
         </div>
@@ -333,8 +362,9 @@ export default function Requests() {
               </p>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Item</label>
+              <label htmlFor="request-item" className="block text-xs font-medium text-gray-600 mb-1">Item</label>
               <select
+                id="request-item"
                 required
                 disabled={itemsLoading || items.length === 0}
                 value={form.item_id}
@@ -357,15 +387,16 @@ export default function Requests() {
               {itemsError && (
                 <p className="mt-1 text-xs text-red-600">
                   {itemsError}{" "}
-                  <button type="button" onClick={loadItemOptions} className="underline hover:no-underline">
+                  <button type="button" onClick={() => loadItemOptions(true)} className="underline hover:no-underline">
                     Retry
                   </button>
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+              <label htmlFor="request-quantity" className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
               <input
+                id="request-quantity"
                 type="number"
                 min="1"
                 step="1"
@@ -409,10 +440,11 @@ export default function Requests() {
             </p>
             {decision.action !== "fulfill" && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">
+                <label htmlFor="admin-note" className="mb-1 block text-xs font-medium text-gray-600">
                   Admin note {decision.action === "reject" ? "(required)" : "(optional)"}
                 </label>
                 <textarea
+                  id="admin-note"
                   rows="3"
                   required={decision.action === "reject"}
                   value={decision.note}
