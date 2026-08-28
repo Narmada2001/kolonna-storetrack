@@ -50,7 +50,7 @@ export default function Requests() {
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [decision, setDecision] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(isAdmin ? "pending" : "all");
 
   useEffect(() => {
     if (location.state?.openCreate) {
@@ -205,6 +205,13 @@ export default function Requests() {
             );
           })}
       </div>
+
+      {isAdmin && statusFilter === "pending" && !loading && !error && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">Pending review queue:</span>{" "}
+          {statusCounts.pending || 0} request{statusCounts.pending === 1 ? "" : "s"} awaiting a decision.
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
