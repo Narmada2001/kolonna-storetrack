@@ -64,7 +64,12 @@ def create_request(
 
 
 def _get_pending_request(request_id: int, db: Session) -> ItemRequest:
-    req = db.query(ItemRequest).filter(ItemRequest.id == request_id).first()
+    req = (
+        db.query(ItemRequest)
+        .filter(ItemRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != RequestStatus.pending:

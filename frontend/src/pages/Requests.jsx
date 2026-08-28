@@ -183,8 +183,7 @@ export default function Requests() {
         </div>
       )}
 
-      {!isAdmin && (
-        <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter requests by status">
           {STATUS_TABS.map((tab) => {
             const count = tab.key === "all" ? requests.length : statusCounts[tab.key] || 0;
             const active = statusFilter === tab.key;
@@ -196,12 +195,11 @@ export default function Requests() {
                   active ? "bg-brand-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {tab.label} {count > 0 && <span className={active ? "opacity-80" : "text-gray-400"}>({count})</span>}
+                {tab.label} <span className={active ? "opacity-80" : "text-gray-400"}>({count})</span>
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
