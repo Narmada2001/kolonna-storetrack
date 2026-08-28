@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
-from app.models import Item, User, UserRole
+from app.models import Item, ItemRequest, User, UserRole
 
 
 @pytest.fixture()
@@ -55,6 +55,15 @@ def users(db_session):
 @pytest.fixture()
 def item(db_session):
     record = Item(name="A4 Paper", quantity_in_stock=10, reorder_level=2, unit_price=100)
+    db_session.add(record)
+    db_session.commit()
+    db_session.refresh(record)
+    return record
+
+
+@pytest.fixture()
+def pending_request(db_session, users, item):
+    record = ItemRequest(employee_id=users["employee"].id, item_id=item.id, quantity=2)
     db_session.add(record)
     db_session.commit()
     db_session.refresh(record)

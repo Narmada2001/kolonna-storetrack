@@ -84,7 +84,7 @@ def approve_request(
 ):
     req = _get_pending_request(request_id, db)
     req.status = RequestStatus.approved
-    req.admin_note = payload.admin_note
+    req.admin_note = payload.admin_note.strip() if payload.admin_note and payload.admin_note.strip() else None
     req.response_date = datetime.utcnow()
     db.commit()
     db.refresh(req)
@@ -102,8 +102,13 @@ def reject_request(
     db: Session = Depends(get_db),
 ):
     req = _get_pending_request(request_id, db)
+    if not payload.admin_note or not payload.admin_note.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A rejection reason is required",
+        )
     req.status = RequestStatus.rejected
-    req.admin_note = payload.admin_note
+    req.admin_note = payload.admin_note.strip()
     req.response_date = datetime.utcnow()
     db.commit()
     db.refresh(req)

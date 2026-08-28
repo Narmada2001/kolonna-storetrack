@@ -49,6 +49,7 @@ export default function Requests() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [decision, setDecision] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
@@ -116,17 +117,32 @@ export default function Requests() {
     setForm({ item_id: "", quantity: 1 });
   }
 
-  async function handleAction(request, action) {
+  function openDecision(request, action) {
+    setDecision({ request, action, note: "", error: "" });
+  }
+
+  async function handleDecision(e) {
+    e.preventDefault();
+    if (!decision || busyId) return;
+    const { request, action, note } = decision;
+    if (action === "reject" && !note.trim()) {
+      setDecision({ ...decision, error: "Please provide a reason for rejecting this request." });
+      return;
+    }
     setBusyId(request.id);
     try {
       if (action === "fulfill") {
         await client.post(`/requests/${request.id}/fulfill`);
       } else {
-        await client.post(`/requests/${request.id}/${action}`, {});
+        await client.post(`/requests/${request.id}/${action}`, { admin_note: note.trim() || null });
       }
+      setDecision(null);
       loadRequests();
     } catch (err) {
-      alert(err.response?.data?.detail || `Failed to ${action} request`);
+      setDecision((current) => ({
+        ...current,
+        error: err.response?.data?.detail || `Failed to ${action} request`,
+      }));
     } finally {
       setBusyId(null);
     }
@@ -248,7 +264,7 @@ export default function Requests() {
                   </span>
                   {r.admin_note && (
                     <p className="mt-1 max-w-[240px] text-xs italic text-gray-500" title={r.admin_note}>
-                      “{r.admin_note}”
+                      &ldquo;{r.admin_note}&rdquo;
                     </p>
                   )}
                 </td>
@@ -266,14 +282,14 @@ export default function Requests() {
                       <>
                         <button
                           disabled={busyId === r.id}
-                          onClick={() => handleAction(r, "approve")}
+                          onClick={() => openDecision(r, "approve")}
                           className="text-emerald-600 hover:underline disabled:opacity-50"
                         >
                           Approve
                         </button>
                         <button
                           disabled={busyId === r.id}
-                          onClick={() => handleAction(r, "reject")}
+                          onClick={() => openDecision(r, "reject")}
                           className="text-red-600 hover:underline disabled:opacity-50"
                         >
                           Reject
@@ -283,7 +299,7 @@ export default function Requests() {
                     {r.status === "approved" && (
                       <button
                         disabled={busyId === r.id}
-                        onClick={() => handleAction(r, "fulfill")}
+                        onClick={() => openDecision(r, "fulfill")}
                         className="text-brand-600 hover:underline disabled:opacity-50"
                       >
                         Fulfill
@@ -363,6 +379,44 @@ export default function Requests() {
                 className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? "Submitting..." : "Submit Request"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {decision && (
+        <Modal
+          title={`${decision.action === "fulfill" ? "Fulfill" : decision.action === "approve" ? "Approve" : "Reject"} Request`}
+          onClose={() => !busyId && setDecision(null)}
+        >
+          <form onSubmit={handleDecision} className="space-y-4">
+            <p className="text-sm text-gray-600">
+              {decision.action === "fulfill"
+                ? `Issue ${decision.request.quantity} × ${decision.request.item_name}?`
+                : `${decision.action === "approve" ? "Approve" : "Reject"} ${decision.request.item_name} for ${decision.request.employee_name}?`}
+            </p>
+            {decision.action !== "fulfill" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Admin note {decision.action === "reject" ? "(required)" : "(optional)"}
+                </label>
+                <textarea
+                  rows="3"
+                  required={decision.action === "reject"}
+                  value={decision.note}
+                  onChange={(e) => setDecision({ ...decision, note: e.target.value, error: "" })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            {decision.error && <p role="alert" className="text-sm text-red-600">{decision.error}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={Boolean(busyId)} onClick={() => setDecision(null)} className="rounded-md border px-4 py-2 text-sm disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={Boolean(busyId)} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {busyId ? "Saving..." : "Confirm"}
               </button>
             </div>
           </form>
