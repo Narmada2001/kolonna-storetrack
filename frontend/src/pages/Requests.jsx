@@ -46,6 +46,8 @@ export default function Requests() {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -92,14 +94,26 @@ export default function Requests() {
 
   async function handleCreate(e) {
     e.preventDefault();
+    if (creating) return;
+    setCreating(true);
+    setCreateError("");
     try {
       await client.post("/requests", { item_id: Number(form.item_id), quantity: Number(form.quantity) });
       setShowCreate(false);
       setForm({ item_id: "", quantity: 1 });
       loadRequests();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to create request");
+      setCreateError(err.response?.data?.detail || "Failed to create request");
+    } finally {
+      setCreating(false);
     }
+  }
+
+  function closeCreateModal() {
+    if (creating) return;
+    setShowCreate(false);
+    setCreateError("");
+    setForm({ item_id: "", quantity: 1 });
   }
 
   async function handleAction(request, action) {
@@ -285,8 +299,13 @@ export default function Requests() {
       </div>
 
       {showCreate && (
-        <Modal title="New Item Request" onClose={() => setShowCreate(false)}>
+        <Modal title="New Item Request" onClose={closeCreateModal}>
           <form onSubmit={handleCreate} className="space-y-3">
+            {createError && (
+              <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                {createError}
+              </p>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Item</label>
               <select
@@ -332,16 +351,18 @@ export default function Requests() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
+                disabled={creating}
+                onClick={closeCreateModal}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+                disabled={creating || itemsLoading || items.length === 0}
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Submit Request
+                {creating ? "Submitting..." : "Submit Request"}
               </button>
             </div>
           </form>

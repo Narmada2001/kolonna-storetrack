@@ -40,6 +40,12 @@ def create_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != UserRole.employee:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employees can create item requests",
+        )
+
     item = db.query(Item).filter(Item.id == payload.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
