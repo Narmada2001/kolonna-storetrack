@@ -86,6 +86,12 @@ Token.model_rebuild()
 # decimal point, 2 after.
 _MAX_UNIT_PRICE = Decimal("99999999.99")
 
+# Sanity ceiling for a physical store's stock counts, well within the
+# `quantity_in_stock`/`reorder_level` Integer columns' range — catches
+# fat-finger entry (an extra digit or two) as a clean 422 instead of
+# letting an implausible value into reports and low-stock calculations.
+_MAX_STOCK_QUANTITY = 1_000_000
+
 
 class ItemBase(BaseModel):
     name: str
@@ -101,8 +107,8 @@ class ItemCreate(ItemBase):
     name: str = Field(..., min_length=1, max_length=150)
     category: Optional[str] = Field(None, max_length=100)
     unit: Optional[str] = Field(None, max_length=30)
-    quantity_in_stock: int = Field(0, ge=0)
-    reorder_level: int = Field(0, ge=0)
+    quantity_in_stock: int = Field(0, ge=0, le=_MAX_STOCK_QUANTITY)
+    reorder_level: int = Field(0, ge=0, le=_MAX_STOCK_QUANTITY)
     unit_price: Decimal = Field(Decimal("0"), ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
@@ -132,8 +138,8 @@ class ItemUpdate(BaseModel):
     category: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
     unit: Optional[str] = Field(None, max_length=30)
-    quantity_in_stock: Optional[int] = Field(None, ge=0)
-    reorder_level: Optional[int] = Field(None, ge=0)
+    quantity_in_stock: Optional[int] = Field(None, ge=0, le=_MAX_STOCK_QUANTITY)
+    reorder_level: Optional[int] = Field(None, ge=0, le=_MAX_STOCK_QUANTITY)
     unit_price: Optional[Decimal] = Field(None, ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
@@ -169,6 +175,10 @@ class ItemOut(ItemBase):
     created_at: datetime
     updated_at: datetime
     is_low_stock: bool = False
+    # Richer than is_low_stock (kept as-is for existing callers): distinguishes
+    # a merely-below-reorder-point item from one that's fully out of stock.
+    # One of "ok" | "low_stock" | "out_of_stock".
+    stock_status: str = "ok"
 
 
 # ---------- Supplier ----------
