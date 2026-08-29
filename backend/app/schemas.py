@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator, model_validator
 
 from .models import UserRole, RequestStatus, TransactionType
 
@@ -122,17 +122,86 @@ class ItemBase(BaseModel):
 
 
 class ItemCreate(ItemBase):
-    pass
+    name: str = Field(..., min_length=1, max_length=150)
+    category: Optional[str] = Field(None, max_length=100)
+    unit: Optional[str] = Field(None, max_length=30)
+    quantity_in_stock: int = Field(0, ge=0)
+    reorder_level: int = Field(0, ge=0)
+    unit_price: Decimal = Field(Decimal("0"), ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Item name cannot be blank")
+        return v
+
+    @field_validator("category", "unit", "description")
+    @classmethod
+    def _blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
 
 
 class ItemUpdate(BaseModel):
-    name: Optional[str] = None
-    category: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=150)
+    category: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = None
-    unit: Optional[str] = None
-    quantity_in_stock: Optional[int] = None
-    reorder_level: Optional[int] = None
-    unit_price: Optional[Decimal] = None
+    unit: Optional[str] = Field(None, max_length=30)
+    quantity_in_stock: Optional[int] = Field(None, ge=0)
+    reorder_level: Optional[int] = Field(None, ge=0)
+    unit_price: Optional[Decimal] = Field(None, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Item name cannot be blank")
+        return v
+
+    @field_validator("category", "unit", "description")
+    @classmethod
+    def _blank_to_none(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Item name must not be blank")
+        return v
+
+    @field_validator("quantity_in_stock")
+    @classmethod
+    def quantity_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("quantity_in_stock must be 0 or greater")
+        return v
+
+    @field_validator("reorder_level")
+    @classmethod
+    def reorder_level_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("reorder_level must be 0 or greater")
+        return v
+
+    @field_validator("unit_price")
+    @classmethod
+    def unit_price_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("unit_price must be 0 or greater")
+        return v
 
     @field_validator("name")
     @classmethod
