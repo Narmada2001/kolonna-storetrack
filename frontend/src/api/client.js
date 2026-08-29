@@ -26,4 +26,13 @@ client.interceptors.response.use(
   }
 );
 
+export function getErrorMessage(err, fallback = "Something went wrong. Please try again.") {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail.map((d) => d.msg).filter(Boolean).join(" ") || fallback;
+  }
+  return fallback;
+}
+
 export default client;

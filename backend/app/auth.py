@@ -18,6 +18,14 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
 
 
+def validate_password_strength(password: str) -> None:
+    if len(password) < 8 or not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters and include both a letter and a number",
+        )
+
+
 def verify_password(plain_password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8")[:72], password_hash.encode("utf-8"))
 

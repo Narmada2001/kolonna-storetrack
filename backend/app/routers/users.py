@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from .. import schemas
-from ..auth import hash_password, require_admin
+from ..auth import hash_password, require_admin, validate_password_strength
 from ..database import get_db
 from ..models import User
 
@@ -23,6 +23,7 @@ def list_users(db: Session = Depends(get_db)):
 def create_user(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="A user with this email already exists")
+    validate_password_strength(payload.password)
 
     user = User(
         full_name=payload.full_name,
@@ -45,6 +46,7 @@ def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends
 
     data = payload.model_dump(exclude_unset=True)
     if "password" in data and data["password"]:
+        validate_password_strength(data["password"])
         user.password_hash = hash_password(data.pop("password"))
     else:
         data.pop("password", None)

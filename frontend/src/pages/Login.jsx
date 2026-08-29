@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import StoreIllustration from "../components/StoreIllustration.jsx";
+import { getErrorMessage } from "../api/client.js";
 
 export default function Login() {
   const { login } = useAuth();
@@ -23,7 +24,7 @@ export default function Login() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.detail || "Login failed. Please try again.");
+      setError(getErrorMessage(err, "Login failed. Please try again."));
     } finally {
       setSubmitting(false);
     }

@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
-import client from "../api/client.js";
+import client, { getErrorMessage } from "../api/client.js";
 import Modal from "../components/Modal.jsx";
 
 const emptyForm = { full_name: "", email: "", phone: "", role: "employee", password: "" };
+const PASSWORD_HINT = "At least 8 characters, including a letter and a number.";
+
+function isPasswordStrong(password) {
+  return password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
+}
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -37,6 +42,11 @@ export default function Users() {
 
   async function handleSave(e) {
     e.preventDefault();
+    const needsPassword = !modalItem?.id || form.password;
+    if (needsPassword && !isPasswordStrong(form.password)) {
+      alert(PASSWORD_HINT);
+      return;
+    }
     setSaving(true);
     try {
       if (modalItem?.id) {
@@ -50,7 +60,7 @@ export default function Users() {
       setModalItem(null);
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to save user");
+      alert(getErrorMessage(err, "Failed to save user"));
     } finally {
       setSaving(false);
     }
@@ -61,7 +71,7 @@ export default function Users() {
       await client.put(`/users/${user.id}`, { is_active: !user.is_active });
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to update user");
+      alert(getErrorMessage(err, "Failed to update user"));
     }
   }
 
@@ -71,7 +81,7 @@ export default function Users() {
       await client.delete(`/users/${user.id}`);
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to delete user");
+      alert(getErrorMessage(err, "Failed to delete user"));
     }
   }
 
@@ -188,10 +198,14 @@ export default function Users() {
               <input
                 type="password"
                 required={!modalItem.id}
+                minLength={8}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
+              {(!modalItem.id || form.password) && (
+                <p className="mt-1 text-xs text-gray-400">{PASSWORD_HINT}</p>
+              )}
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
