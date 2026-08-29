@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator, model_validator
 
 from .models import UserRole, RequestStatus, TransactionType
 
@@ -26,9 +26,24 @@ class UserBase(BaseModel):
     phone: Optional[str] = None
     role: UserRole = UserRole.employee
 
+    @field_validator("full_name")
+    @classmethod
+    def full_name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("full_name must not be blank")
+        return v
+
 
 class UserCreate(UserBase):
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return v
 
 
 class UserUpdate(BaseModel):
@@ -37,6 +52,22 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+
+    @field_validator("full_name")
+    @classmethod
+    def full_name_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("full_name must not be blank")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return v
 
 
 class UserOut(UserBase):
@@ -60,6 +91,35 @@ class ItemBase(BaseModel):
     reorder_level: int = 0
     unit_price: Decimal = Decimal("0")
 
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Item name must not be blank")
+        return v
+
+    @field_validator("quantity_in_stock")
+    @classmethod
+    def quantity_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("quantity_in_stock must be 0 or greater")
+        return v
+
+    @field_validator("reorder_level")
+    @classmethod
+    def reorder_level_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("reorder_level must be 0 or greater")
+        return v
+
+    @field_validator("unit_price")
+    @classmethod
+    def unit_price_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("unit_price must be 0 or greater")
+        return v
+
 
 class ItemCreate(ItemBase):
     pass
@@ -73,6 +133,36 @@ class ItemUpdate(BaseModel):
     quantity_in_stock: Optional[int] = None
     reorder_level: Optional[int] = None
     unit_price: Optional[Decimal] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Item name must not be blank")
+        return v
+
+    @field_validator("quantity_in_stock")
+    @classmethod
+    def quantity_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("quantity_in_stock must be 0 or greater")
+        return v
+
+    @field_validator("reorder_level")
+    @classmethod
+    def reorder_level_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("reorder_level must be 0 or greater")
+        return v
+
+    @field_validator("unit_price")
+    @classmethod
+    def unit_price_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("unit_price must be 0 or greater")
+        return v
 
 
 class ItemOut(ItemBase):
@@ -92,6 +182,14 @@ class SupplierBase(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
 
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Supplier name must not be blank")
+        return v
+
 
 class SupplierCreate(SupplierBase):
     pass
@@ -99,6 +197,15 @@ class SupplierCreate(SupplierBase):
 
 class SupplierUpdate(SupplierBase):
     name: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:  # type: ignore[override]
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Supplier name must not be blank")
+        return v
 
 
 class SupplierOut(SupplierBase):
@@ -111,6 +218,13 @@ class SupplierOut(SupplierBase):
 class ItemRequestCreate(BaseModel):
     item_id: int
     quantity: int
+
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        return v
 
 
 class ItemRequestDecision(BaseModel):
@@ -139,6 +253,13 @@ class TransactionCreate(BaseModel):
     type: TransactionType
     quantity: int
     reference_no: Optional[str] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        return v
 
 
 class TransactionOut(BaseModel):
