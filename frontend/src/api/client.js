@@ -16,10 +16,14 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const hadToken = !!localStorage.getItem("storetrack_token");
       localStorage.removeItem("storetrack_token");
       localStorage.removeItem("storetrack_user");
       if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+        // A full navigation (not react-router) since this runs outside React context;
+        // only flag it as an expired session if we actually had a token that got rejected,
+        // not a fresh visit that never logged in.
+        window.location.href = hadToken ? "/login?reason=expired" : "/login";
       }
     }
     return Promise.reject(error);
