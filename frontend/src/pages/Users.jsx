@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import client from "../api/client.js";
+import client, { getErrorMessage } from "../api/client.js";
 import Modal from "../components/Modal.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
-const emptyForm = { full_name: "", email: "", phone: "", role: "employee", password: "" };
+const emptyForm = { full_name: "", email: "", phone: "", role: "employee", password: "", confirmPassword: "" };
+const PASSWORD_HINT = "At least 8 characters, including a letter and a number.";
+
+function isPasswordStrong(password) {
+  return password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
+}
 
 export default function Users() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalItem, setModalItem] = useState(null);
@@ -31,37 +38,61 @@ export default function Users() {
   }
 
   function openEdit(user) {
-    setForm({ full_name: user.full_name, email: user.email, phone: user.phone || "", role: user.role, password: "" });
+    setForm({
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone || "",
+      role: user.role,
+      password: "",
+      confirmPassword: "",
+    });
     setModalItem(user);
   }
 
   async function handleSave(e) {
     e.preventDefault();
+    const needsPassword = !modalItem?.id || form.password;
+    if (needsPassword && !isPasswordStrong(form.password)) {
+      alert(PASSWORD_HINT);
+      return;
+    }
+    if (needsPassword && form.password !== form.confirmPassword) {
+      alert("Passwords do not match.");
+      return;
+    }
+    const isPromotingToAdmin = form.role === "admin" && (!modalItem?.id || modalItem.role !== "admin");
+    if (isPromotingToAdmin && !confirm("Grant this account Admin access? Admins can manage all users and data.")) {
+      return;
+    }
     setSaving(true);
     try {
+      const payload = { ...form };
+      delete payload.confirmPassword;
       if (modalItem?.id) {
-        const payload = { ...form };
         if (!payload.password) delete payload.password;
         delete payload.email;
         await client.put(`/users/${modalItem.id}`, payload);
       } else {
-        await client.post("/users", form);
+        await client.post("/users", payload);
       }
       setModalItem(null);
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to save user");
+      alert(getErrorMessage(err, "Failed to save user"));
     } finally {
       setSaving(false);
     }
   }
 
   async function toggleActive(user) {
+    if (user.is_active && !confirm(`Disable account for "${user.full_name}"? They will no longer be able to log in.`)) {
+      return;
+    }
     try {
       await client.put(`/users/${user.id}`, { is_active: !user.is_active });
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to update user");
+      alert(getErrorMessage(err, "Failed to update user"));
     }
   }
 
@@ -71,7 +102,7 @@ export default function Users() {
       await client.delete(`/users/${user.id}`);
       loadUsers();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to delete user");
+      alert(getErrorMessage(err, "Failed to delete user"));
     }
   }
 
@@ -106,33 +137,43 @@ export default function Users() {
                 </td>
               </tr>
             )}
-            {users.map((u) => (
-              <tr key={u.id} className="border-t border-gray-100">
-                <td className="px-4 py-3 font-medium text-gray-800">{u.full_name}</td>
-                <td className="px-4 py-3">{u.email}</td>
-                <td className="px-4 py-3 capitalize">{u.role}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      u.is_active ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                    }`}
-                  >
-                    {u.is_active ? "Active" : "Disabled"}
-                  </span>
-                </td>
-                <td className="px-4 py-3 space-x-3">
-                  <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline">
-                    Edit
-                  </button>
-                  <button onClick={() => toggleActive(u)} className="text-amber-600 hover:underline">
-                    {u.is_active ? "Disable" : "Enable"}
-                  </button>
-                  <button onClick={() => handleDelete(u)} className="text-red-600 hover:underline">
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const isSelf = u.id === currentUser?.id;
+              return (
+                <tr key={u.id} className="border-t border-gray-100">
+                  <td className="px-4 py-3 font-medium text-gray-800">
+                    {u.full_name}
+                    {isSelf && <span className="ml-1 text-xs font-normal text-gray-400">(You)</span>}
+                  </td>
+                  <td className="px-4 py-3">{u.email}</td>
+                  <td className="px-4 py-3 capitalize">{u.role}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        u.is_active ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                      }`}
+                    >
+                      {u.is_active ? "Active" : "Disabled"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 space-x-3">
+                    <button onClick={() => openEdit(u)} className="text-brand-600 hover:underline">
+                      Edit
+                    </button>
+                    {!(isSelf && u.is_active) && (
+                      <button onClick={() => toggleActive(u)} className="text-amber-600 hover:underline">
+                        {u.is_active ? "Disable" : "Enable"}
+                      </button>
+                    )}
+                    {!isSelf && (
+                      <button onClick={() => handleDelete(u)} className="text-red-600 hover:underline">
+                        Delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -173,12 +214,16 @@ export default function Users() {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
                 <select
                   value={form.role}
+                  disabled={modalItem.id === currentUser?.id}
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
                 >
                   <option value="employee">Employee</option>
                   <option value="admin">Admin</option>
                 </select>
+                {modalItem.id === currentUser?.id && (
+                  <p className="mt-1 text-xs text-gray-400">You cannot change your own role.</p>
+                )}
               </div>
             </div>
             <div>
@@ -188,11 +233,27 @@ export default function Users() {
               <input
                 type="password"
                 required={!modalItem.id}
+                minLength={8}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
+              {(!modalItem.id || form.password) && (
+                <p className="mt-1 text-xs text-gray-400">{PASSWORD_HINT}</p>
+              )}
             </div>
+            {(!modalItem.id || form.password) && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  required={!modalItem.id || !!form.password}
+                  value={form.confirmPassword}
+                  onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
