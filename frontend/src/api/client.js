@@ -21,9 +21,16 @@ client.interceptors.response.use(
       localStorage.removeItem("storetrack_user");
       if (window.location.pathname !== "/login") {
         // A full navigation (not react-router) since this runs outside React context;
-        // only flag it as an expired session if we actually had a token that got rejected,
-        // not a fresh visit that never logged in.
-        window.location.href = hadToken ? "/login?reason=expired" : "/login";
+        // only flag it as a rejected session if we actually had a token, not a fresh
+        // visit that never logged in. Pass along the backend's specific reason (e.g.
+        // "session expired" vs an invalid/tampered token) so the login page can show it.
+        if (hadToken) {
+          const detail = error.response?.data?.detail;
+          const message = typeof detail === "string" ? detail : "Your session has ended. Please log in again.";
+          window.location.href = `/login?${new URLSearchParams({ reason: message })}`;
+        } else {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(error);

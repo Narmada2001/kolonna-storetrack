@@ -4,10 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import StoreIllustration from "../components/StoreIllustration.jsx";
 import { getErrorMessage } from "../api/client.js";
 
-const SIGN_OUT_NOTICES = {
-  idle: "You were signed out after 15 minutes of inactivity.",
-  expired: "Your session expired. Please log in again.",
-};
+const IDLE_NOTICE = "You were signed out after 15 minutes of inactivity.";
 
 export default function Login() {
   const { login } = useAuth();
@@ -17,9 +14,10 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [notice] = useState(() => {
-    const reason = location.state?.reason || new URLSearchParams(location.search).get("reason");
-    if (reason) window.history.replaceState({}, "", location.pathname);
-    return SIGN_OUT_NOTICES[reason] || "";
+    if (location.state?.reason === "idle") return IDLE_NOTICE;
+    const message = new URLSearchParams(location.search).get("reason");
+    if (message) window.history.replaceState({}, "", location.pathname);
+    return message || "";
   });
   const [submitting, setSubmitting] = useState(false);
 
