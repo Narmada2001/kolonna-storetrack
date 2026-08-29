@@ -22,6 +22,15 @@ const SORT_OPTIONS = [
   { value: "stock_desc", label: "Sort: Stock (High → Low)" },
 ];
 
+function formatApiError(err, fallback) {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+  }
+  return fallback;
+}
+
 function sortItems(items, sortBy) {
   const arr = [...items];
   if (sortBy === "stock_asc") arr.sort((a, b) => a.quantity_in_stock - b.quantity_in_stock);
@@ -120,7 +129,7 @@ export default function Inventory() {
       setModalItem(null);
       loadItems();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to save item");
+      alert(formatApiError(err, "Failed to save item"));
     } finally {
       setSaving(false);
     }
@@ -132,7 +141,7 @@ export default function Inventory() {
       await client.delete(`/items/${item.id}`);
       loadItems();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to delete item");
+      alert(formatApiError(err, "Failed to delete item"));
     }
   }
 
