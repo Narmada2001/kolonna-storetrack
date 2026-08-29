@@ -3,7 +3,7 @@ import client, { getErrorMessage } from "../api/client.js";
 import Modal from "../components/Modal.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 
-const emptyForm = { full_name: "", email: "", phone: "", role: "employee", password: "" };
+const emptyForm = { full_name: "", email: "", phone: "", role: "employee", password: "", confirmPassword: "" };
 const PASSWORD_HINT = "At least 8 characters, including a letter and a number.";
 
 function isPasswordStrong(password) {
@@ -38,7 +38,14 @@ export default function Users() {
   }
 
   function openEdit(user) {
-    setForm({ full_name: user.full_name, email: user.email, phone: user.phone || "", role: user.role, password: "" });
+    setForm({
+      full_name: user.full_name,
+      email: user.email,
+      phone: user.phone || "",
+      role: user.role,
+      password: "",
+      confirmPassword: "",
+    });
     setModalItem(user);
   }
 
@@ -49,15 +56,24 @@ export default function Users() {
       alert(PASSWORD_HINT);
       return;
     }
+    if (needsPassword && form.password !== form.confirmPassword) {
+      alert("Passwords do not match.");
+      return;
+    }
+    const isPromotingToAdmin = form.role === "admin" && (!modalItem?.id || modalItem.role !== "admin");
+    if (isPromotingToAdmin && !confirm("Grant this account Admin access? Admins can manage all users and data.")) {
+      return;
+    }
     setSaving(true);
     try {
+      const payload = { ...form };
+      delete payload.confirmPassword;
       if (modalItem?.id) {
-        const payload = { ...form };
         if (!payload.password) delete payload.password;
         delete payload.email;
         await client.put(`/users/${modalItem.id}`, payload);
       } else {
-        await client.post("/users", form);
+        await client.post("/users", payload);
       }
       setModalItem(null);
       loadUsers();
@@ -69,6 +85,9 @@ export default function Users() {
   }
 
   async function toggleActive(user) {
+    if (user.is_active && !confirm(`Disable account for "${user.full_name}"? They will no longer be able to log in.`)) {
+      return;
+    }
     try {
       await client.put(`/users/${user.id}`, { is_active: !user.is_active });
       loadUsers();
@@ -223,6 +242,18 @@ export default function Users() {
                 <p className="mt-1 text-xs text-gray-400">{PASSWORD_HINT}</p>
               )}
             </div>
+            {(!modalItem.id || form.password) && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Confirm Password</label>
+                <input
+                  type="password"
+                  required={!modalItem.id || !!form.password}
+                  value={form.confirmPassword}
+                  onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
