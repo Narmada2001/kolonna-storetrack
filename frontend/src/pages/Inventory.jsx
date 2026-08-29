@@ -31,6 +31,49 @@ function formatApiError(err, fallback) {
   return fallback;
 }
 
+// FastAPI/pydantic 422 errors come back as a list of {loc, msg} objects.
+// Map them to {fieldName: message} so the form can show them inline;
+// returns null for non-validation errors (403, 404, network, ...).
+function parseFieldErrors(err) {
+  const detail = err.response?.data?.detail;
+  if (!Array.isArray(detail)) return null;
+  const fieldErrors = {};
+  for (const d of detail) {
+    const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
+    if (typeof field === "string") {
+      fieldErrors[field] = d.msg || "Invalid value";
+    }
+  }
+  return Object.keys(fieldErrors).length ? fieldErrors : null;
+}
+
+const MAX_UNIT_PRICE = 99999999.99;
+
+// Mirrors the backend's ItemCreate/ItemUpdate rules so mistakes are caught
+// instantly, without a round trip — the backend stays the source of truth.
+function validateItemForm(f) {
+  const errors = {};
+  const name = (f.name || "").trim();
+  if (!name) errors.name = "Item name cannot be blank";
+  else if (name.length > 150) errors.name = "Name must be 150 characters or fewer";
+
+  if ((f.category || "").length > 100) errors.category = "Category must be 100 characters or fewer";
+  if ((f.unit || "").length > 30) errors.unit = "Unit must be 30 characters or fewer";
+
+  if (f.quantity_in_stock === "" || Number.isNaN(Number(f.quantity_in_stock)) || Number(f.quantity_in_stock) < 0) {
+    errors.quantity_in_stock = "Quantity must be 0 or greater";
+  }
+  if (f.reorder_level === "" || Number.isNaN(Number(f.reorder_level)) || Number(f.reorder_level) < 0) {
+    errors.reorder_level = "Reorder level must be 0 or greater";
+  }
+  if (f.unit_price === "" || Number.isNaN(Number(f.unit_price)) || Number(f.unit_price) < 0) {
+    errors.unit_price = "Unit price must be 0 or greater";
+  } else if (Number(f.unit_price) > MAX_UNIT_PRICE) {
+    errors.unit_price = "Unit price is too large";
+  }
+  return errors;
+}
+
 function sortItems(items, sortBy) {
   const arr = [...items];
   if (sortBy === "stock_asc") arr.sort((a, b) => a.quantity_in_stock - b.quantity_in_stock);
@@ -51,6 +94,7 @@ export default function Inventory() {
   const [error, setError] = useState("");
   const [modalItem, setModalItem] = useState(null); // null = closed, {} = create, {...} = edit
   const [form, setForm] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
   async function loadItems() {
@@ -101,6 +145,7 @@ export default function Inventory() {
 
   function openCreate() {
     setForm(emptyForm);
+    setFormErrors({});
     setModalItem({});
   }
 
@@ -114,11 +159,27 @@ export default function Inventory() {
       reorder_level: item.reorder_level,
       unit_price: item.unit_price,
     });
+    setFormErrors({});
     setModalItem(item);
+  }
+
+  function updateForm(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+    setFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   }
 
   async function handleSave(e) {
     e.preventDefault();
+    const clientErrors = validateItemForm(form);
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors);
+      return;
+    }
     setSaving(true);
     try {
       if (modalItem?.id) {
@@ -129,7 +190,12 @@ export default function Inventory() {
       setModalItem(null);
       loadItems();
     } catch (err) {
-      alert(formatApiError(err, "Failed to save item"));
+      const fieldErrors = parseFieldErrors(err);
+      if (fieldErrors) {
+        setFormErrors(fieldErrors);
+      } else {
+        alert(formatApiError(err, "Failed to save item"));
+      }
     } finally {
       setSaving(false);
     }
@@ -315,34 +381,43 @@ export default function Inventory() {
               <input
                 required
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                onChange={(e) => updateForm("name", e.target.value)}
+                className={`w-full rounded-md border px-3 py-2 text-sm ${
+                  formErrors.name ? "border-red-400" : "border-gray-300"
+                }`}
               />
+              {formErrors.name && <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
                 <input
                   value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("category", e.target.value)}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.category ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.category && <p className="mt-1 text-xs text-red-600">{formErrors.category}</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
                 <input
                   value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("unit", e.target.value)}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.unit ? "border-red-400" : "border-gray-300"
+                  }`}
                   placeholder="e.g. box, unit, ream"
                 />
+                {formErrors.unit && <p className="mt-1 text-xs text-red-600">{formErrors.unit}</p>}
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
               <textarea
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e) => updateForm("description", e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 rows={2}
               />
@@ -355,9 +430,14 @@ export default function Inventory() {
                   min="0"
                   required
                   value={form.quantity_in_stock}
-                  onChange={(e) => setForm({ ...form, quantity_in_stock: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("quantity_in_stock", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.quantity_in_stock ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.quantity_in_stock && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.quantity_in_stock}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Level</label>
@@ -366,9 +446,14 @@ export default function Inventory() {
                   min="0"
                   required
                   value={form.reorder_level}
-                  onChange={(e) => setForm({ ...form, reorder_level: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("reorder_level", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.reorder_level ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.reorder_level && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.reorder_level}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Unit Price</label>
@@ -378,9 +463,12 @@ export default function Inventory() {
                   step="0.01"
                   required
                   value={form.unit_price}
-                  onChange={(e) => setForm({ ...form, unit_price: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("unit_price", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.unit_price ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.unit_price && <p className="mt-1 text-xs text-red-600">{formErrors.unit_price}</p>}
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">

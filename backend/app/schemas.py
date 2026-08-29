@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator, model_validator
@@ -82,6 +82,11 @@ Token.model_rebuild()
 
 
 # ---------- Item ----------
+# Matches the `unit_price` column's Numeric(10, 2): 8 digits before the
+# decimal point, 2 after.
+_MAX_UNIT_PRICE = Decimal("99999999.99")
+
+
 class ItemBase(BaseModel):
     name: str
     category: Optional[str] = None
@@ -91,35 +96,6 @@ class ItemBase(BaseModel):
     reorder_level: int = 0
     unit_price: Decimal = Decimal("0")
 
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Item name must not be blank")
-        return v
-
-    @field_validator("quantity_in_stock")
-    @classmethod
-    def quantity_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("quantity_in_stock must be 0 or greater")
-        return v
-
-    @field_validator("reorder_level")
-    @classmethod
-    def reorder_level_non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("reorder_level must be 0 or greater")
-        return v
-
-    @field_validator("unit_price")
-    @classmethod
-    def unit_price_non_negative(cls, v: Decimal) -> Decimal:
-        if v < 0:
-            raise ValueError("unit_price must be 0 or greater")
-        return v
-
 
 class ItemCreate(ItemBase):
     name: str = Field(..., min_length=1, max_length=150)
@@ -127,7 +103,7 @@ class ItemCreate(ItemBase):
     unit: Optional[str] = Field(None, max_length=30)
     quantity_in_stock: int = Field(0, ge=0)
     reorder_level: int = Field(0, ge=0)
-    unit_price: Decimal = Field(Decimal("0"), ge=0)
+    unit_price: Decimal = Field(Decimal("0"), ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
     @classmethod
@@ -145,6 +121,11 @@ class ItemCreate(ItemBase):
         v = v.strip()
         return v or None
 
+    @field_validator("unit_price")
+    @classmethod
+    def _round_price(cls, v: Decimal) -> Decimal:
+        return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=150)
@@ -153,7 +134,7 @@ class ItemUpdate(BaseModel):
     unit: Optional[str] = Field(None, max_length=30)
     quantity_in_stock: Optional[int] = Field(None, ge=0)
     reorder_level: Optional[int] = Field(None, ge=0)
-    unit_price: Optional[Decimal] = Field(None, ge=0)
+    unit_price: Optional[Decimal] = Field(None, ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
     @classmethod
@@ -173,35 +154,12 @@ class ItemUpdate(BaseModel):
         v = v.strip()
         return v or None
 
-    @field_validator("name")
-    @classmethod
-    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            v = v.strip()
-            if not v:
-                raise ValueError("Item name must not be blank")
-        return v
-
-    @field_validator("quantity_in_stock")
-    @classmethod
-    def quantity_non_negative(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 0:
-            raise ValueError("quantity_in_stock must be 0 or greater")
-        return v
-
-    @field_validator("reorder_level")
-    @classmethod
-    def reorder_level_non_negative(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 0:
-            raise ValueError("reorder_level must be 0 or greater")
-        return v
-
     @field_validator("unit_price")
     @classmethod
-    def unit_price_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        if v is not None and v < 0:
-            raise ValueError("unit_price must be 0 or greater")
-        return v
+    def _round_price(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is None:
+            return None
+        return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 class ItemOut(ItemBase):
