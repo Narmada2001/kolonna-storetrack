@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
@@ -51,6 +51,11 @@ Token.model_rebuild()
 
 
 # ---------- Item ----------
+# Matches the `unit_price` column's Numeric(10, 2): 8 digits before the
+# decimal point, 2 after.
+_MAX_UNIT_PRICE = Decimal("99999999.99")
+
+
 class ItemBase(BaseModel):
     name: str
     category: Optional[str] = None
@@ -67,7 +72,7 @@ class ItemCreate(ItemBase):
     unit: Optional[str] = Field(None, max_length=30)
     quantity_in_stock: int = Field(0, ge=0)
     reorder_level: int = Field(0, ge=0)
-    unit_price: Decimal = Field(Decimal("0"), ge=0)
+    unit_price: Decimal = Field(Decimal("0"), ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
     @classmethod
@@ -85,6 +90,11 @@ class ItemCreate(ItemBase):
         v = v.strip()
         return v or None
 
+    @field_validator("unit_price")
+    @classmethod
+    def _round_price(cls, v: Decimal) -> Decimal:
+        return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
 
 class ItemUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=150)
@@ -93,7 +103,7 @@ class ItemUpdate(BaseModel):
     unit: Optional[str] = Field(None, max_length=30)
     quantity_in_stock: Optional[int] = Field(None, ge=0)
     reorder_level: Optional[int] = Field(None, ge=0)
-    unit_price: Optional[Decimal] = Field(None, ge=0)
+    unit_price: Optional[Decimal] = Field(None, ge=0, le=_MAX_UNIT_PRICE)
 
     @field_validator("name")
     @classmethod
@@ -112,6 +122,13 @@ class ItemUpdate(BaseModel):
             return None
         v = v.strip()
         return v or None
+
+    @field_validator("unit_price")
+    @classmethod
+    def _round_price(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is None:
+            return None
+        return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 class ItemOut(ItemBase):
