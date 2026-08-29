@@ -12,9 +12,18 @@ from ..models import Item
 router = APIRouter(prefix="/items", tags=["items"])
 
 
+def _stock_status(item: Item) -> str:
+    if item.quantity_in_stock <= 0:
+        return "out_of_stock"
+    if item.quantity_in_stock <= item.reorder_level:
+        return "low_stock"
+    return "ok"
+
+
 def _to_out(item: Item) -> schemas.ItemOut:
     out = schemas.ItemOut.model_validate(item)
     out.is_low_stock = item.quantity_in_stock <= item.reorder_level
+    out.stock_status = _stock_status(item)
     return out
 
 

@@ -48,6 +48,9 @@ function parseFieldErrors(err) {
 }
 
 const MAX_UNIT_PRICE = 99999999.99;
+// Sanity ceiling for a physical store's stock counts — mirrors the backend's
+// _MAX_STOCK_QUANTITY, well within what a fat-fingered extra digit could hit.
+const MAX_STOCK_QUANTITY = 1_000_000;
 
 // Mirrors the backend's ItemCreate/ItemUpdate rules so mistakes are caught
 // instantly, without a round trip — the backend stays the source of truth.
@@ -62,9 +65,13 @@ function validateItemForm(f) {
 
   if (f.quantity_in_stock === "" || Number.isNaN(Number(f.quantity_in_stock)) || Number(f.quantity_in_stock) < 0) {
     errors.quantity_in_stock = "Quantity must be 0 or greater";
+  } else if (Number(f.quantity_in_stock) > MAX_STOCK_QUANTITY) {
+    errors.quantity_in_stock = "Quantity is too large";
   }
   if (f.reorder_level === "" || Number.isNaN(Number(f.reorder_level)) || Number(f.reorder_level) < 0) {
     errors.reorder_level = "Reorder level must be 0 or greater";
+  } else if (Number(f.reorder_level) > MAX_STOCK_QUANTITY) {
+    errors.reorder_level = "Reorder level is too large";
   }
   if (f.unit_price === "" || Number.isNaN(Number(f.unit_price)) || Number(f.unit_price) < 0) {
     errors.unit_price = "Unit price must be 0 or greater";
@@ -72,6 +79,22 @@ function validateItemForm(f) {
     errors.unit_price = "Unit price is too large";
   }
   return errors;
+}
+
+// Mirrors the backend's items.py _stock_status(): a three-tier read on where
+// an item sits relative to its own reorder point, distinguishing "empty" from
+// "just below the reorder line" — is_low_stock (kept for existing callers)
+// only ever expressed the coarser two-tier version.
+const STOCK_STATUS_META = {
+  out_of_stock: { label: "Out of Stock", badge: "bg-red-100 text-red-700", text: "text-red-600 font-semibold" },
+  low_stock: { label: "Low Stock", badge: "bg-amber-100 text-amber-700", text: "text-amber-700 font-semibold" },
+  ok: { label: "OK", badge: "bg-emerald-100 text-emerald-700", text: "text-gray-700" },
+};
+
+function computeStockStatus(quantity, reorderLevel) {
+  if (quantity <= 0) return "out_of_stock";
+  if (quantity <= reorderLevel) return "low_stock";
+  return "ok";
 }
 
 function sortItems(items, sortBy) {
@@ -136,6 +159,15 @@ export default function Inventory() {
 
   const sortedItems = useMemo(() => sortItems(items, sortBy), [items, sortBy]);
   const hasActiveFilters = Boolean(search || category || lowStockOnly);
+
+  // Live preview of how the item will read once saved, so an admin can see
+  // the effect of the Quantity/Reorder Level pair before submitting.
+  const modalStockStatus = useMemo(() => {
+    const q = Number(form.quantity_in_stock);
+    const r = Number(form.reorder_level);
+    if (Number.isNaN(q) || Number.isNaN(r) || q < 0 || r < 0) return null;
+    return computeStockStatus(q, r);
+  }, [form.quantity_in_stock, form.reorder_level]);
 
   function clearFilters() {
     setSearch("");
@@ -330,21 +362,19 @@ export default function Inventory() {
               <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.category || "-"}</td>
-                <td className="px-4 py-3">
+                <td className={`px-4 py-3 ${STOCK_STATUS_META[item.stock_status]?.text || ""}`}>
                   {item.quantity_in_stock} {item.unit}
                 </td>
                 <td className="px-4 py-3">{item.reorder_level}</td>
                 <td className="px-4 py-3">Rs {Number(item.unit_price).toFixed(2)}</td>
                 <td className="px-4 py-3">
-                  {item.is_low_stock ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                      Low Stock
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                      OK
-                    </span>
-                  )}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      STOCK_STATUS_META[item.stock_status]?.badge || STOCK_STATUS_META.ok.badge
+                    }`}
+                  >
+                    {STOCK_STATUS_META[item.stock_status]?.label || "OK"}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   {isAdmin ? (
@@ -428,6 +458,7 @@ export default function Inventory() {
                 <input
                   type="number"
                   min="0"
+                  max={MAX_STOCK_QUANTITY}
                   required
                   value={form.quantity_in_stock}
                   onChange={(e) => updateForm("quantity_in_stock", Number(e.target.value))}
@@ -444,6 +475,7 @@ export default function Inventory() {
                 <input
                   type="number"
                   min="0"
+                  max={MAX_STOCK_QUANTITY}
                   required
                   value={form.reorder_level}
                   onChange={(e) => updateForm("reorder_level", Number(e.target.value))}
@@ -471,6 +503,17 @@ export default function Inventory() {
                 {formErrors.unit_price && <p className="mt-1 text-xs text-red-600">{formErrors.unit_price}</p>}
               </div>
             </div>
+            {modalStockStatus && (
+              <p className="text-xs text-gray-500">
+                Will show as{" "}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STOCK_STATUS_META[modalStockStatus].badge}`}
+                >
+                  {STOCK_STATUS_META[modalStockStatus].label}
+                </span>{" "}
+                at these levels.
+              </p>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
