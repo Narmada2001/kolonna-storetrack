@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -12,6 +13,33 @@ from .database import get_db
 from .models import User, UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_MINUTES = 15
+
+# In-memory per-process store: fine for this app's single-instance SQLite
+# deployment, but attempts reset on restart and wouldn't be shared across
+# multiple worker processes.
+_failed_login_attempts: dict[str, list[datetime]] = defaultdict(list)
+
+
+def _recent_failed_attempts(email: str) -> list[datetime]:
+    cutoff = datetime.utcnow() - timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+    attempts = [t for t in _failed_login_attempts.get(email, []) if t > cutoff]
+    _failed_login_attempts[email] = attempts
+    return attempts
+
+
+def is_login_locked(email: str) -> bool:
+    return len(_recent_failed_attempts(email)) >= MAX_FAILED_LOGIN_ATTEMPTS
+
+
+def register_failed_login(email: str) -> None:
+    _recent_failed_attempts(email).append(datetime.utcnow())
+
+
+def clear_failed_logins(email: str) -> None:
+    _failed_login_attempts.pop(email, None)
 
 
 def hash_password(password: str) -> str:
