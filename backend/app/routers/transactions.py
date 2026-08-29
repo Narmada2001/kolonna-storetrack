@@ -19,7 +19,17 @@ def _to_out(txn: Transaction) -> schemas.TransactionOut:
     return out
 
 
-@router.get("", response_model=list[schemas.TransactionOut], dependencies=[Depends(require_admin)])
+@router.get(
+    "",
+    response_model=list[schemas.TransactionOut],
+    dependencies=[Depends(require_admin)],
+    summary="List all stock transactions",
+    description=(
+        "Returns all stock transactions in reverse chronological order. "
+        "Supports optional filtering by item, supplier, and transaction type. "
+        "Requires Admin role."
+    ),
+)
 def list_transactions(
     item_id: Optional[int] = None,
     supplier_id: Optional[int] = None,
@@ -42,6 +52,13 @@ def list_transactions(
     response_model=schemas.TransactionOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_admin)],
+    summary="Record a stock transaction",
+    description=(
+        "Manually records a stock movement (received or issued). "
+        "For `received` transactions, stock is incremented. "
+        "For `issued` transactions, stock is decremented — fails with 400 if insufficient. "
+        "Quantity must be greater than zero. Requires Admin role."
+    ),
 )
 def create_transaction(
     payload: schemas.TransactionCreate,
