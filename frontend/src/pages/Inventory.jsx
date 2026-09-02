@@ -20,6 +20,18 @@ const SORT_OPTIONS = [
   { value: "name", label: "Sort: Name (A–Z)" },
   { value: "stock_asc", label: "Sort: Stock (Low → High)" },
   { value: "stock_desc", label: "Sort: Stock (High → Low)" },
+  { value: "status", label: "Sort: Status (Most Urgent First)" },
+];
+
+// "" = old behavior preserved (no filter). "needs_attention" maps to the
+// existing low_stock_only API param (low_stock + out_of_stock together,
+// unchanged from before); the other two use the newer, more precise
+// stock_status param so an admin can isolate just one tier.
+const STATUS_FILTER_OPTIONS = [
+  { value: "", label: "All Statuses" },
+  { value: "needs_attention", label: "Needs Restocking (Low + Out)" },
+  { value: "low_stock", label: "Low Stock Only" },
+  { value: "out_of_stock", label: "Out of Stock Only" },
 ];
 
 function formatApiError(err, fallback) {
@@ -97,11 +109,21 @@ function computeStockStatus(quantity, reorderLevel) {
   return "ok";
 }
 
+// Lower = more urgent. Used only for the "most urgent first" sort; the
+// server-side stock_status filter is the source of truth for which tier
+// an item is actually in.
+const STATUS_SEVERITY = { out_of_stock: 0, low_stock: 1, ok: 2 };
+
 function sortItems(items, sortBy) {
   const arr = [...items];
   if (sortBy === "stock_asc") arr.sort((a, b) => a.quantity_in_stock - b.quantity_in_stock);
   else if (sortBy === "stock_desc") arr.sort((a, b) => b.quantity_in_stock - a.quantity_in_stock);
-  else arr.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sortBy === "status") {
+    arr.sort(
+      (a, b) =>
+        STATUS_SEVERITY[a.stock_status] - STATUS_SEVERITY[b.stock_status] || a.name.localeCompare(b.name)
+    );
+  } else arr.sort((a, b) => a.name.localeCompare(b.name));
   return arr;
 }
 
@@ -111,7 +133,7 @@ export default function Inventory() {
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -126,7 +148,10 @@ export default function Inventory() {
       const params = {};
       if (search) params.search = search;
       if (category) params.category = category;
-      if (lowStockOnly) params.low_stock_only = true;
+      if (statusFilter === "needs_attention") params.low_stock_only = true;
+      else if (statusFilter === "low_stock" || statusFilter === "out_of_stock") {
+        params.stock_status = statusFilter;
+      }
       const res = await client.get("/items", { params });
       setItems(res.data);
       setError("");
@@ -141,7 +166,7 @@ export default function Inventory() {
     const timer = setTimeout(loadItems, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, category, lowStockOnly]);
+  }, [search, category, statusFilter]);
 
   // Full category list, independent of the current filters, so choosing one
   // category doesn't make the others disappear from the dropdown.
@@ -158,7 +183,20 @@ export default function Inventory() {
   }, []);
 
   const sortedItems = useMemo(() => sortItems(items, sortBy), [items, sortBy]);
-  const hasActiveFilters = Boolean(search || category || lowStockOnly);
+  const hasActiveFilters = Boolean(search || category || statusFilter);
+
+  // Quick health-check counts alongside the result count, from whatever is
+  // currently loaded — useful to both admin (what needs restocking) and
+  // employee (what might not be requestable) at a glance.
+  const statusCounts = useMemo(() => {
+    let lowStock = 0;
+    let outOfStock = 0;
+    for (const item of sortedItems) {
+      if (item.stock_status === "low_stock") lowStock += 1;
+      else if (item.stock_status === "out_of_stock") outOfStock += 1;
+    }
+    return { lowStock, outOfStock };
+  }, [sortedItems]);
 
   // Live preview of how the item will read once saved, so an admin can see
   // the effect of the Quantity/Reorder Level pair before submitting.
@@ -172,7 +210,7 @@ export default function Inventory() {
   function clearFilters() {
     setSearch("");
     setCategory("");
-    setLowStockOnly(false);
+    setStatusFilter("");
   }
 
   function openCreate() {
@@ -294,15 +332,17 @@ export default function Inventory() {
           ))}
         </select>
 
-        <label className="inline-flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={lowStockOnly}
-            onChange={(e) => setLowStockOnly(e.target.checked)}
-            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-          />
-          Low stock only
-        </label>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
 
         {hasActiveFilters && (
           <button onClick={clearFilters} className="text-sm font-medium text-brand-600 hover:underline">
@@ -313,7 +353,19 @@ export default function Inventory() {
 
       {!error && (
         <p className="mb-4 text-xs text-gray-500">
-          {loading ? "Loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"} found`}
+          {loading ? (
+            "Loading..."
+          ) : (
+            <>
+              {sortedItems.length} item{sortedItems.length === 1 ? "" : "s"} found
+              {statusCounts.outOfStock > 0 && (
+                <span className="text-red-600"> · {statusCounts.outOfStock} out of stock</span>
+              )}
+              {statusCounts.lowStock > 0 && (
+                <span className="text-amber-700"> · {statusCounts.lowStock} low stock</span>
+              )}
+            </>
+          )}
         </p>
       )}
 
@@ -359,7 +411,16 @@ export default function Inventory() {
               </tr>
             )}
             {!loading && sortedItems.map((item) => (
-              <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
+              <tr
+                key={item.id}
+                className={`border-t border-gray-100 hover:bg-gray-50 ${
+                  item.stock_status === "out_of_stock"
+                    ? "border-l-4 border-l-red-400"
+                    : item.stock_status === "low_stock"
+                    ? "border-l-4 border-l-amber-400"
+                    : ""
+                }`}
+              >
                 <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.category || "-"}</td>
                 <td className={`px-4 py-3 ${STOCK_STATUS_META[item.stock_status]?.text || ""}`}>

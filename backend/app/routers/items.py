@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
@@ -34,13 +34,16 @@ def _to_out(item: Item) -> schemas.ItemOut:
     summary="List inventory items",
     description=(
         "Returns all inventory items. Supports optional filtering by name/description "
-        "keyword (`search`), category, and low-stock flag. Accessible by both Admin and Employee."
+        "keyword (`search`), category, low-stock flag (`low_stock_only`, covers both low "
+        "and out-of-stock items), and precise stock status (`stock_status`: ok | "
+        "low_stock | out_of_stock). Accessible by both Admin and Employee."
     ),
 )
 def list_items(
     search: Optional[str] = None,
     category: Optional[str] = None,
     low_stock_only: bool = False,
+    stock_status: Optional[Literal["ok", "low_stock", "out_of_stock"]] = None,
     db: Session = Depends(get_db),
 ):
     query = db.query(Item)
@@ -53,6 +56,8 @@ def list_items(
     items = query.order_by(Item.name).all()
     if low_stock_only:
         items = [i for i in items if i.quantity_in_stock <= i.reorder_level]
+    if stock_status:
+        items = [i for i in items if _stock_status(i) == stock_status]
     return [_to_out(i) for i in items]
 
 
