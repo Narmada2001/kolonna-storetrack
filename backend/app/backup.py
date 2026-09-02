@@ -115,6 +115,24 @@ def list_backups() -> list[dict]:
     ]
 
 
+def get_backup_path(filename: str) -> Path:
+    """Return the Path to a backup file securely."""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise BackupError("Invalid filename")
+    
+    path = BACKUP_DIR / filename
+    if not path.exists() or not path.is_file():
+        raise BackupError("Backup file not found")
+        
+    return path
+
+
+def delete_backup(filename: str) -> None:
+    """Delete a specific backup file."""
+    path = get_backup_path(filename)
+    path.unlink()
+
+
 if __name__ == "__main__":
     if "--list" in sys.argv:
         rows = list_backups()

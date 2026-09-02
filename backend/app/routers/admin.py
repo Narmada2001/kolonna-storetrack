@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from .. import schemas
 from ..auth import require_admin
@@ -27,3 +28,26 @@ def create_backup():
         "size_bytes": stat.st_size,
         "created_at": datetime.utcfromtimestamp(stat.st_mtime),
     }
+
+
+@router.get("/backups/{filename}/download")
+def download_backup(filename: str):
+    try:
+        path = backup_module.get_backup_path(filename)
+    except backup_module.BackupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    
+    return FileResponse(
+        path=path,
+        filename=filename,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.delete("/backups/{filename}", status_code=204)
+def delete_backup_file(filename: str):
+    try:
+        backup_module.delete_backup(filename)
+    except backup_module.BackupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
