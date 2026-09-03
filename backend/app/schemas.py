@@ -167,6 +167,36 @@ class ItemUpdate(BaseModel):
             return None
         return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Item name must not be blank")
+        return v
+
+    @field_validator("quantity_in_stock")
+    @classmethod
+    def quantity_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("quantity_in_stock must be 0 or greater")
+        return v
+
+    @field_validator("reorder_level")
+    @classmethod
+    def reorder_level_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("reorder_level must be 0 or greater")
+        return v
+
+    @field_validator("unit_price")
+    @classmethod
+    def unit_price_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("unit_price must be 0 or greater")
+        return v
+
 
 class ItemOut(ItemBase):
     model_config = ConfigDict(from_attributes=True)

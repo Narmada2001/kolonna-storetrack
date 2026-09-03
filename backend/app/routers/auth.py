@@ -16,7 +16,16 @@ from ..models import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=schemas.Token)
+@router.post(
+    "/login",
+    response_model=schemas.Token,
+    summary="Login and obtain a JWT token",
+    description=(
+        "Authenticates the user with email and password. "
+        "Returns a signed JWT access token that must be included in the "
+        "`Authorization: Bearer <token>` header for all subsequent requests."
+    ),
+)
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     if is_login_locked(payload.email):
         raise HTTPException(
@@ -38,6 +47,11 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
     return schemas.Token(access_token=token, user=schemas.UserOut.model_validate(user))
 
 
-@router.get("/me", response_model=schemas.UserOut)
+@router.get(
+    "/me",
+    response_model=schemas.UserOut,
+    summary="Get current authenticated user",
+    description="Returns the profile of the currently authenticated user based on the Bearer token.",
+)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
