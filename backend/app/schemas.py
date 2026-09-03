@@ -260,6 +260,10 @@ class TransactionCreate(BaseModel):
     type: TransactionType
     quantity: int
     reference_no: Optional[str] = None
+    notes: Optional[str] = None
+    unit_cost: Optional[Decimal] = None
+    total_cost: Optional[Decimal] = None
+    issued_to_id: Optional[int] = None
 
     @field_validator("quantity")
     @classmethod
@@ -280,8 +284,13 @@ class TransactionOut(BaseModel):
     type: TransactionType
     quantity: int
     reference_no: Optional[str] = None
+    notes: Optional[str] = None
+    unit_cost: Optional[Decimal] = None
+    total_cost: Optional[Decimal] = None
+    issued_to_id: Optional[int] = None
+    issued_to_name: Optional[str] = None
     transaction_date: datetime
-    recorded_by_id: int
+    recorded_by_id: Optional[int] = None
     recorded_by_name: Optional[str] = None
 
 

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..auth import get_current_user, hash_password, require_admin
 from ..database import get_db
-from ..models import User
+from ..models import User, ItemRequest, Transaction
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -101,5 +101,21 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+
+    # Nullify transactions where this user was the recorder or recipient
+    # (recorded_by_id and issued_to_id are nullable FKs — safe to set NULL)
+    db.query(Transaction).filter(Transaction.recorded_by_id == user_id).update(
+        {Transaction.recorded_by_id: None}, synchronize_session="fetch"
+    )
+    db.query(Transaction).filter(Transaction.issued_to_id == user_id).update(
+        {Transaction.issued_to_id: None}, synchronize_session="fetch"
+    )
+
+    # Delete item requests belonging to this employee
+    # (employee_id is NOT NULL so we must delete them, not null them)
+    db.query(ItemRequest).filter(ItemRequest.employee_id == user_id).delete(
+        synchronize_session="fetch"
+    )
+
     db.delete(user)
     db.commit()
