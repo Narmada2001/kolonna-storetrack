@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import StoreIllustration from "../components/StoreIllustration.jsx";
+import { getErrorMessage } from "../api/client.js";
+
+const IDLE_NOTICE = "You were signed out after 15 minutes of inactivity.";
 
 export default function Login() {
   const { login } = useAuth();
@@ -10,9 +13,12 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [notice] = useState(
-    location.state?.reason === "idle" ? "You were signed out after 15 minutes of inactivity." : ""
-  );
+  const [notice] = useState(() => {
+    if (location.state?.reason === "idle") return IDLE_NOTICE;
+    const message = new URLSearchParams(location.search).get("reason");
+    if (message) window.history.replaceState({}, "", location.pathname);
+    return message || "";
+  });
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e) {
@@ -23,7 +29,7 @@ export default function Login() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.response?.data?.detail || "Login failed. Please try again.");
+      setError(getErrorMessage(err, "Login failed. Please try again."));
     } finally {
       setSubmitting(false);
     }

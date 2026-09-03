@@ -9,7 +9,13 @@ from ..models import Supplier
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
 
-@router.get("", response_model=list[schemas.SupplierOut], dependencies=[Depends(require_any_role)])
+@router.get(
+    "",
+    response_model=list[schemas.SupplierOut],
+    dependencies=[Depends(require_any_role)],
+    summary="List all suppliers",
+    description="Returns all suppliers ordered by name. Accessible by both Admin and Employee.",
+)
 def list_suppliers(db: Session = Depends(get_db)):
     return db.query(Supplier).order_by(Supplier.name).all()
 
@@ -19,8 +25,19 @@ def list_suppliers(db: Session = Depends(get_db)):
     response_model=schemas.SupplierOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_admin)],
+    summary="Create a new supplier",
+    description=(
+        "Creates a new supplier. The supplier name must be unique (case-insensitive). "
+        "Requires Admin role. Returns 409 if a supplier with the same name already exists."
+    ),
 )
 def create_supplier(payload: schemas.SupplierCreate, db: Session = Depends(get_db)):
+    existing = db.query(Supplier).filter(Supplier.name.ilike(payload.name)).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A supplier named '{payload.name}' already exists",
+        )
     supplier = Supplier(**payload.model_dump())
     db.add(supplier)
     db.commit()
@@ -28,11 +45,20 @@ def create_supplier(payload: schemas.SupplierCreate, db: Session = Depends(get_d
     return supplier
 
 
-@router.put("/{supplier_id}", response_model=schemas.SupplierOut, dependencies=[Depends(require_admin)])
+@router.put(
+    "/{supplier_id}",
+    response_model=schemas.SupplierOut,
+    dependencies=[Depends(require_admin)],
+    summary="Update a supplier",
+    description=(
+        "Updates fields of an existing supplier by ID (partial update). "
+        "Requires Admin role. Returns 404 if the supplier does not exist."
+    ),
+)
 def update_supplier(supplier_id: int, payload: schemas.SupplierUpdate, db: Session = Depends(get_db)):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise HTTPException(status_code=404, detail=f"Supplier with id {supplier_id} not found")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(supplier, field, value)
     db.commit()
@@ -41,11 +67,18 @@ def update_supplier(supplier_id: int, payload: schemas.SupplierUpdate, db: Sessi
 
 
 @router.delete(
-    "/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin)]
+    "/{supplier_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+    summary="Delete a supplier",
+    description=(
+        "Permanently deletes a supplier by ID. Requires Admin role. "
+        "Returns 404 if the supplier does not exist."
+    ),
 )
 def delete_supplier(supplier_id: int, db: Session = Depends(get_db)):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise HTTPException(status_code=404, detail=f"Supplier with id {supplier_id} not found")
     db.delete(supplier)
     db.commit()
