@@ -290,7 +290,7 @@ class TransactionOut(BaseModel):
     issued_to_id: Optional[int] = None
     issued_to_name: Optional[str] = None
     transaction_date: datetime
-    recorded_by_id: int
+    recorded_by_id: Optional[int] = None
     recorded_by_name: Optional[str] = None
 
 

@@ -41,7 +41,6 @@ def download_backup(filename: str):
         path=path,
         filename=filename,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
 
