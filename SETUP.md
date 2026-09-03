@@ -2,6 +2,7 @@
 
 Quick guide to get the project running on your own machine after cloning it. For the full
 project overview, deployment instructions, and design decisions, see [README.md](README.md).
+For the full API reference, see [backend/API_DOCUMENTATION.md](backend/API_DOCUMENTATION.md).
 
 ## 1. Prerequisites
 
@@ -139,6 +140,13 @@ that process, or run the backend with `uvicorn app.main:app --reload --port 8001
 shared with your teammates. If you want to reset it, stop the backend, delete
 `backend/storetrack.db`, and re-run `python -m app.seed`.
 
+**`sqlalchemy.exc.OperationalError: no such table`** — The database tables were not created yet.
+Make sure you ran `python -m app.seed` (step 3) before starting `uvicorn`.
+
+**CORS error in the browser console** — The backend's `CORS_ORIGINS` setting doesn't include the
+frontend's URL. Edit `backend/.env` and add your frontend URL to `CORS_ORIGINS`, then restart
+`uvicorn`.
+
 ## 6. Database backups
 
 The **Reports** page (admin only) has a "Backup Now" button that dumps the database to
@@ -168,6 +176,75 @@ Program:   C:\path\to\kolonna-storetrack\backend\.venv\Scripts\python.exe
 Arguments: -m app.backup
 Start in:  C:\path\to\kolonna-storetrack\backend
 ```
+
+## 7. Running tests
+
+The test suite uses `pytest` with a SQLite in-memory database — no MySQL server needed.
+
+```bash
+cd backend
+# activate your virtual environment first
+pip install -r requirements.txt   # installs pytest and httpx if not already installed
+pytest tests/ -v
+```
+
+Expected output: all tests should show `PASSED`. If any test fails, read the error message
+— it usually points directly to the failing assertion.
+
+**Run a single test file:**
+```bash
+pytest tests/test_items.py -v
+```
+
+**Run tests matching a keyword:**
+```bash
+pytest tests/ -v -k "stock"
+```
+
+## 8. Environment variables reference
+
+All backend configuration is in `backend/.env` (copied from `.env.example`).
+
+| Variable | Default (example) | Description |
+|----------|-------------------|-------------|
+| `DATABASE_URL` | `sqlite:///./storetrack.db` | SQLAlchemy connection string. Use SQLite for local dev, MySQL/PostgreSQL for production |
+| `SECRET_KEY` | *(from .env.example)* | Secret used to sign JWT tokens. Change this to a long random string in production |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | JWT lifetime in minutes |
+| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed frontend origins |
+| `ADMIN_EMAIL` | `admin@kolonna.lk` | Email for the default admin account seeded by `python -m app.seed` |
+| `ADMIN_PASSWORD` | `Admin@123` | Password for the default admin account. **Change after first login!** |
+
+The frontend has a single variable in `frontend/.env`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8000` | Base URL of the backend API |
+
+## 9. Development tips
+
+**Hot reload** — Both servers support hot reload out of the box:
+- Backend: `uvicorn app.main:app --reload` restarts on any Python file change
+- Frontend: `npm run dev` (Vite HMR) refreshes the browser instantly on save
+
+**Resetting the database** — To start fresh with the seed data:
+```bash
+# Stop uvicorn first, then:
+rm backend/storetrack.db    # macOS/Linux
+del backend\storetrack.db   # Windows
+python -m app.seed
+```
+
+**Checking the API interactively** — Open http://localhost:8000/docs while the backend is
+running. You can log in, get a token via the `/auth/login` endpoint, click "Authorize" in the
+Swagger UI (paste the token), and test every endpoint directly in the browser.
+
+**Viewing SQL queries** — To see every SQL statement the backend runs, add this to your
+`backend/.env`:
+```
+ECHO_SQL=true
+```
+Then add `echo=True` to the `create_engine` call in `backend/app/database.py` — useful for
+debugging unexpected query behaviour.
 
 ## Project structure
 

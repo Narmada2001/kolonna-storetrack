@@ -19,7 +19,15 @@ def _to_out(req: ItemRequest) -> schemas.ItemRequestOut:
     return out
 
 
-@router.get("", response_model=list[schemas.ItemRequestOut])
+@router.get(
+    "",
+    response_model=list[schemas.ItemRequestOut],
+    summary="List item requests",
+    description=(
+        "Returns item requests. Admins see all requests; Employees see only their own. "
+        "Optionally filter by status: pending, approved, rejected, fulfilled."
+    ),
+)
 def list_requests(
     status_filter: Optional[RequestStatus] = None,
     current_user: User = Depends(get_current_user),
@@ -34,7 +42,16 @@ def list_requests(
     return [_to_out(r) for r in requests]
 
 
-@router.post("", response_model=schemas.ItemRequestOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=schemas.ItemRequestOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit an item request",
+    description=(
+        "Submits a request for an inventory item. The request is created in `pending` status. "
+        "Quantity must be greater than zero, and the item must exist."
+    ),
+)
 def create_request(
     payload: schemas.ItemRequestCreate,
     current_user: User = Depends(get_current_user),
@@ -78,6 +95,11 @@ def _get_pending_request(request_id: int, db: Session) -> ItemRequest:
     "/{request_id}/approve",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Approve a pending request",
+    description=(
+        "Admin-only. Sets the request status to `approved`. "
+        "Only requests currently in `pending` state can be approved."
+    ),
 )
 def approve_request(
     request_id: int,
@@ -97,6 +119,11 @@ def approve_request(
     "/{request_id}/reject",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Reject a pending request",
+    description=(
+        "Admin-only. Sets the request status to `rejected`. "
+        "Only requests currently in `pending` state can be rejected."
+    ),
 )
 def reject_request(
     request_id: int,
@@ -121,6 +148,11 @@ def reject_request(
     "/{request_id}/fulfill",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Fulfill an approved request",
+    description=(
+        "Admin-only. Marks an approved request as fulfilled, deducts the requested quantity from "
+        "the item's stock, and records an issued transaction. Fails with 400 if stock is insufficient."
+    ),
 )
 def fulfill_request(
     request_id: int,

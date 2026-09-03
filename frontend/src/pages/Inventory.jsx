@@ -20,13 +20,110 @@ const SORT_OPTIONS = [
   { value: "name", label: "Sort: Name (A–Z)" },
   { value: "stock_asc", label: "Sort: Stock (Low → High)" },
   { value: "stock_desc", label: "Sort: Stock (High → Low)" },
+  { value: "status", label: "Sort: Status (Most Urgent First)" },
 ];
+
+// "" = old behavior preserved (no filter). "needs_attention" maps to the
+// existing low_stock_only API param (low_stock + out_of_stock together,
+// unchanged from before); the other two use the newer, more precise
+// stock_status param so an admin can isolate just one tier.
+const STATUS_FILTER_OPTIONS = [
+  { value: "", label: "All Statuses" },
+  { value: "needs_attention", label: "Needs Restocking (Low + Out)" },
+  { value: "low_stock", label: "Low Stock Only" },
+  { value: "out_of_stock", label: "Out of Stock Only" },
+];
+
+function formatApiError(err, fallback) {
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+  }
+  return fallback;
+}
+
+// FastAPI/pydantic 422 errors come back as a list of {loc, msg} objects.
+// Map them to {fieldName: message} so the form can show them inline;
+// returns null for non-validation errors (403, 404, network, ...).
+function parseFieldErrors(err) {
+  const detail = err.response?.data?.detail;
+  if (!Array.isArray(detail)) return null;
+  const fieldErrors = {};
+  for (const d of detail) {
+    const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
+    if (typeof field === "string") {
+      fieldErrors[field] = d.msg || "Invalid value";
+    }
+  }
+  return Object.keys(fieldErrors).length ? fieldErrors : null;
+}
+
+const MAX_UNIT_PRICE = 99999999.99;
+// Sanity ceiling for a physical store's stock counts — mirrors the backend's
+// _MAX_STOCK_QUANTITY, well within what a fat-fingered extra digit could hit.
+const MAX_STOCK_QUANTITY = 1_000_000;
+
+// Mirrors the backend's ItemCreate/ItemUpdate rules so mistakes are caught
+// instantly, without a round trip — the backend stays the source of truth.
+function validateItemForm(f) {
+  const errors = {};
+  const name = (f.name || "").trim();
+  if (!name) errors.name = "Item name cannot be blank";
+  else if (name.length > 150) errors.name = "Name must be 150 characters or fewer";
+
+  if ((f.category || "").length > 100) errors.category = "Category must be 100 characters or fewer";
+  if ((f.unit || "").length > 30) errors.unit = "Unit must be 30 characters or fewer";
+
+  if (f.quantity_in_stock === "" || Number.isNaN(Number(f.quantity_in_stock)) || Number(f.quantity_in_stock) < 0) {
+    errors.quantity_in_stock = "Quantity must be 0 or greater";
+  } else if (Number(f.quantity_in_stock) > MAX_STOCK_QUANTITY) {
+    errors.quantity_in_stock = "Quantity is too large";
+  }
+  if (f.reorder_level === "" || Number.isNaN(Number(f.reorder_level)) || Number(f.reorder_level) < 0) {
+    errors.reorder_level = "Reorder level must be 0 or greater";
+  } else if (Number(f.reorder_level) > MAX_STOCK_QUANTITY) {
+    errors.reorder_level = "Reorder level is too large";
+  }
+  if (f.unit_price === "" || Number.isNaN(Number(f.unit_price)) || Number(f.unit_price) < 0) {
+    errors.unit_price = "Unit price must be 0 or greater";
+  } else if (Number(f.unit_price) > MAX_UNIT_PRICE) {
+    errors.unit_price = "Unit price is too large";
+  }
+  return errors;
+}
+
+// Mirrors the backend's items.py _stock_status(): a three-tier read on where
+// an item sits relative to its own reorder point, distinguishing "empty" from
+// "just below the reorder line" — is_low_stock (kept for existing callers)
+// only ever expressed the coarser two-tier version.
+const STOCK_STATUS_META = {
+  out_of_stock: { label: "Out of Stock", badge: "bg-red-100 text-red-700", text: "text-red-600 font-semibold" },
+  low_stock: { label: "Low Stock", badge: "bg-amber-100 text-amber-700", text: "text-amber-700 font-semibold" },
+  ok: { label: "OK", badge: "bg-emerald-100 text-emerald-700", text: "text-gray-700" },
+};
+
+function computeStockStatus(quantity, reorderLevel) {
+  if (quantity <= 0) return "out_of_stock";
+  if (quantity <= reorderLevel) return "low_stock";
+  return "ok";
+}
+
+// Lower = more urgent. Used only for the "most urgent first" sort; the
+// server-side stock_status filter is the source of truth for which tier
+// an item is actually in.
+const STATUS_SEVERITY = { out_of_stock: 0, low_stock: 1, ok: 2 };
 
 function sortItems(items, sortBy) {
   const arr = [...items];
   if (sortBy === "stock_asc") arr.sort((a, b) => a.quantity_in_stock - b.quantity_in_stock);
   else if (sortBy === "stock_desc") arr.sort((a, b) => b.quantity_in_stock - a.quantity_in_stock);
-  else arr.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sortBy === "status") {
+    arr.sort(
+      (a, b) =>
+        STATUS_SEVERITY[a.stock_status] - STATUS_SEVERITY[b.stock_status] || a.name.localeCompare(b.name)
+    );
+  } else arr.sort((a, b) => a.name.localeCompare(b.name));
   return arr;
 }
 
@@ -36,12 +133,13 @@ export default function Inventory() {
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
-  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [modalItem, setModalItem] = useState(null); // null = closed, {} = create, {...} = edit
   const [form, setForm] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
   async function loadItems() {
@@ -50,7 +148,10 @@ export default function Inventory() {
       const params = {};
       if (search) params.search = search;
       if (category) params.category = category;
-      if (lowStockOnly) params.low_stock_only = true;
+      if (statusFilter === "needs_attention") params.low_stock_only = true;
+      else if (statusFilter === "low_stock" || statusFilter === "out_of_stock") {
+        params.stock_status = statusFilter;
+      }
       const res = await client.get("/items", { params });
       setItems(res.data);
       setError("");
@@ -65,7 +166,7 @@ export default function Inventory() {
     const timer = setTimeout(loadItems, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, category, lowStockOnly]);
+  }, [search, category, statusFilter]);
 
   // Full category list, independent of the current filters, so choosing one
   // category doesn't make the others disappear from the dropdown.
@@ -82,16 +183,39 @@ export default function Inventory() {
   }, []);
 
   const sortedItems = useMemo(() => sortItems(items, sortBy), [items, sortBy]);
-  const hasActiveFilters = Boolean(search || category || lowStockOnly);
+  const hasActiveFilters = Boolean(search || category || statusFilter);
+
+  // Quick health-check counts alongside the result count, from whatever is
+  // currently loaded — useful to both admin (what needs restocking) and
+  // employee (what might not be requestable) at a glance.
+  const statusCounts = useMemo(() => {
+    let lowStock = 0;
+    let outOfStock = 0;
+    for (const item of sortedItems) {
+      if (item.stock_status === "low_stock") lowStock += 1;
+      else if (item.stock_status === "out_of_stock") outOfStock += 1;
+    }
+    return { lowStock, outOfStock };
+  }, [sortedItems]);
+
+  // Live preview of how the item will read once saved, so an admin can see
+  // the effect of the Quantity/Reorder Level pair before submitting.
+  const modalStockStatus = useMemo(() => {
+    const q = Number(form.quantity_in_stock);
+    const r = Number(form.reorder_level);
+    if (Number.isNaN(q) || Number.isNaN(r) || q < 0 || r < 0) return null;
+    return computeStockStatus(q, r);
+  }, [form.quantity_in_stock, form.reorder_level]);
 
   function clearFilters() {
     setSearch("");
     setCategory("");
-    setLowStockOnly(false);
+    setStatusFilter("");
   }
 
   function openCreate() {
     setForm(emptyForm);
+    setFormErrors({});
     setModalItem({});
   }
 
@@ -105,11 +229,27 @@ export default function Inventory() {
       reorder_level: item.reorder_level,
       unit_price: item.unit_price,
     });
+    setFormErrors({});
     setModalItem(item);
+  }
+
+  function updateForm(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+    setFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
   }
 
   async function handleSave(e) {
     e.preventDefault();
+    const clientErrors = validateItemForm(form);
+    if (Object.keys(clientErrors).length > 0) {
+      setFormErrors(clientErrors);
+      return;
+    }
     setSaving(true);
     try {
       if (modalItem?.id) {
@@ -120,7 +260,12 @@ export default function Inventory() {
       setModalItem(null);
       loadItems();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to save item");
+      const fieldErrors = parseFieldErrors(err);
+      if (fieldErrors) {
+        setFormErrors(fieldErrors);
+      } else {
+        alert(formatApiError(err, "Failed to save item"));
+      }
     } finally {
       setSaving(false);
     }
@@ -132,7 +277,7 @@ export default function Inventory() {
       await client.delete(`/items/${item.id}`);
       loadItems();
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to delete item");
+      alert(formatApiError(err, "Failed to delete item"));
     }
   }
 
@@ -187,15 +332,17 @@ export default function Inventory() {
           ))}
         </select>
 
-        <label className="inline-flex cursor-pointer select-none items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={lowStockOnly}
-            onChange={(e) => setLowStockOnly(e.target.checked)}
-            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-          />
-          Low stock only
-        </label>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        >
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
 
         {hasActiveFilters && (
           <button onClick={clearFilters} className="text-sm font-medium text-brand-600 hover:underline">
@@ -206,7 +353,19 @@ export default function Inventory() {
 
       {!error && (
         <p className="mb-4 text-xs text-gray-500">
-          {loading ? "Loading..." : `${sortedItems.length} item${sortedItems.length === 1 ? "" : "s"} found`}
+          {loading ? (
+            "Loading..."
+          ) : (
+            <>
+              {sortedItems.length} item{sortedItems.length === 1 ? "" : "s"} found
+              {statusCounts.outOfStock > 0 && (
+                <span className="text-red-600"> · {statusCounts.outOfStock} out of stock</span>
+              )}
+              {statusCounts.lowStock > 0 && (
+                <span className="text-amber-700"> · {statusCounts.lowStock} low stock</span>
+              )}
+            </>
+          )}
         </p>
       )}
 
@@ -252,24 +411,31 @@ export default function Inventory() {
               </tr>
             )}
             {!loading && sortedItems.map((item) => (
-              <tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
+              <tr
+                key={item.id}
+                className={`border-t border-gray-100 hover:bg-gray-50 ${
+                  item.stock_status === "out_of_stock"
+                    ? "border-l-4 border-l-red-400"
+                    : item.stock_status === "low_stock"
+                    ? "border-l-4 border-l-amber-400"
+                    : ""
+                }`}
+              >
                 <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                 <td className="px-4 py-3 text-gray-600">{item.category || "-"}</td>
-                <td className="px-4 py-3">
+                <td className={`px-4 py-3 ${STOCK_STATUS_META[item.stock_status]?.text || ""}`}>
                   {item.quantity_in_stock} {item.unit}
                 </td>
                 <td className="px-4 py-3">{item.reorder_level}</td>
                 <td className="px-4 py-3">Rs {Number(item.unit_price).toFixed(2)}</td>
                 <td className="px-4 py-3">
-                  {item.is_low_stock ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                      Low Stock
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                      OK
-                    </span>
-                  )}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                      STOCK_STATUS_META[item.stock_status]?.badge || STOCK_STATUS_META.ok.badge
+                    }`}
+                  >
+                    {STOCK_STATUS_META[item.stock_status]?.label || "OK"}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   {isAdmin ? (
@@ -306,34 +472,43 @@ export default function Inventory() {
               <input
                 required
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                onChange={(e) => updateForm("name", e.target.value)}
+                className={`w-full rounded-md border px-3 py-2 text-sm ${
+                  formErrors.name ? "border-red-400" : "border-gray-300"
+                }`}
               />
+              {formErrors.name && <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
                 <input
                   value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("category", e.target.value)}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.category ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.category && <p className="mt-1 text-xs text-red-600">{formErrors.category}</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Unit</label>
                 <input
                   value={form.unit}
-                  onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("unit", e.target.value)}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.unit ? "border-red-400" : "border-gray-300"
+                  }`}
                   placeholder="e.g. box, unit, ream"
                 />
+                {formErrors.unit && <p className="mt-1 text-xs text-red-600">{formErrors.unit}</p>}
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
               <textarea
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e) => updateForm("description", e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 rows={2}
               />
@@ -344,22 +519,34 @@ export default function Inventory() {
                 <input
                   type="number"
                   min="0"
+                  max={MAX_STOCK_QUANTITY}
                   required
                   value={form.quantity_in_stock}
-                  onChange={(e) => setForm({ ...form, quantity_in_stock: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("quantity_in_stock", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.quantity_in_stock ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.quantity_in_stock && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.quantity_in_stock}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Reorder Level</label>
                 <input
                   type="number"
                   min="0"
+                  max={MAX_STOCK_QUANTITY}
                   required
                   value={form.reorder_level}
-                  onChange={(e) => setForm({ ...form, reorder_level: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("reorder_level", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.reorder_level ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.reorder_level && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.reorder_level}</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Unit Price</label>
@@ -369,11 +556,25 @@ export default function Inventory() {
                   step="0.01"
                   required
                   value={form.unit_price}
-                  onChange={(e) => setForm({ ...form, unit_price: Number(e.target.value) })}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  onChange={(e) => updateForm("unit_price", Number(e.target.value))}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${
+                    formErrors.unit_price ? "border-red-400" : "border-gray-300"
+                  }`}
                 />
+                {formErrors.unit_price && <p className="mt-1 text-xs text-red-600">{formErrors.unit_price}</p>}
               </div>
             </div>
+            {modalStockStatus && (
+              <p className="text-xs text-gray-500">
+                Will show as{" "}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STOCK_STATUS_META[modalStockStatus].badge}`}
+                >
+                  {STOCK_STATUS_META[modalStockStatus].label}
+                </span>{" "}
+                at these levels.
+              </p>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"

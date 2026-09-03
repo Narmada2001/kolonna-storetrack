@@ -106,8 +106,14 @@ class Transaction(Base):
     quantity = Column(Integer, nullable=False)
     reference_no = Column(String(100), nullable=True)
     transaction_date = Column(DateTime, default=datetime.utcnow)
-    recorded_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    recorded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    unit_cost = Column(Numeric(10, 2), nullable=True, default=0)
+    total_cost = Column(Numeric(10, 2), nullable=True, default=0)
+    issued_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     item = relationship("Item", back_populates="transactions")
     supplier = relationship("Supplier", back_populates="transactions")
     recorded_by = relationship("User", foreign_keys=[recorded_by_id])
+    issued_to = relationship("User", foreign_keys=[issued_to_id])
+

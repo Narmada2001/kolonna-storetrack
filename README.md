@@ -7,7 +7,78 @@ IS5109 Community Project proposal (`Community Project Group 18 (Approved ) (1).p
 - **Frontend:** React (Vite) + Tailwind CSS
 - **Modules:** User Management, Inventory Management, Request Management, Transaction & Supplier Management, Reporting
 
-> **New to this repo?** See [SETUP.md](SETUP.md) for a quick clone-to-running-app guide.
+> **New to this repo?** See [SETUP.md](SETUP.md) for a quick clone-to-running-app guide.  
+> **API reference?** See [backend/API_DOCUMENTATION.md](backend/API_DOCUMENTATION.md) for all endpoints.
+
+## System Features
+
+### User Management
+- Role-based access control with two roles: **Admin** and **Employee**
+- Admin can create, update, activate/deactivate, and delete user accounts
+- Passwords are hashed with bcrypt; JWT tokens expire after 60 minutes
+- Employees are prevented from accessing admin-only routes (enforced on the backend)
+
+### Inventory Management
+- Full CRUD for inventory items with name, category, description, unit, stock quantity, reorder level, and unit price
+- Automatic **low-stock flag** (`is_low_stock`) when stock is at or below reorder level
+- Keyword search across name and description; filter by category or low-stock status
+- Duplicate item names are rejected (case-insensitive check)
+
+### Request Management
+- Employees can submit item requests; Admins approve, reject, or fulfil them
+- Clear status lifecycle: `pending` → `approved` → `fulfilled` (or `rejected`)
+- Fulfilling a request automatically deducts stock and logs a transaction
+- Stock sufficiency is verified before fulfilment; requests cannot be re-opened once closed
+
+### Transaction & Supplier Management
+- Admins can manually record stock received from a supplier or issued to staff
+- Full audit trail with item, type, quantity, supplier, reference number, date, and recorder
+- Supplier directory with contact details; duplicate supplier names are rejected
+
+### Reporting & Backups
+- Dashboard with live statistics: total items, low-stock count, pending requests, suppliers, monthly transactions
+- 30-day (configurable) daily received-vs-issued chart for trend analysis
+- Export inventory, request, and transaction reports as **PDF** or **Excel**
+- On-demand database backup via the Admin panel or CLI; retains the last 14 backups automatically
+
+## Validation Rules
+
+All inputs are validated on the backend (Pydantic). Invalid requests return `422 Unprocessable Entity`.
+
+| Field | Rule |
+|-------|------|
+| `full_name` | Must not be blank |
+| `email` | Must be a valid email address; must be unique |
+| `password` | Minimum 8 characters |
+| Item / Supplier `name` | Must not be blank; must be unique (case-insensitive) |
+| `quantity_in_stock`, `reorder_level` | Must be ≥ 0 |
+| `unit_price` | Must be ≥ 0 |
+| Request / Transaction `quantity` | Must be > 0 |
+
+Additional business-logic checks (400-level errors):
+- Cannot create a user with a duplicate email
+- Cannot create an item or supplier with a duplicate name
+- Cannot fulfil a request if stock is insufficient
+- Cannot approve/reject a non-pending request
+- Admin cannot delete their own account
+
+## Testing
+
+The `backend/tests/` folder contains pytest test cases for the core modules.
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+Tests run against an in-memory SQLite database — no MySQL server required. Each test gets a clean database via a function-scoped fixture.
+
+**Test coverage includes:**
+- `test_auth.py` — Login success/failure, inactive user, RBAC enforcement
+- `test_items.py` — CRUD, duplicate name, negative values, search filter, low-stock flag
+- `test_users.py` — Create/update/delete, duplicate email, short password, self-deletion guard
+- `test_requests.py` — Submit, approve, reject, fulfil, stock decrement, insufficient-stock guard
 
 ## Scope decision
 
