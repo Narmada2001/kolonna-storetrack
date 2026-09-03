@@ -13,6 +13,7 @@ const navItems = [
   { to: "/suppliers", label: "Suppliers", adminOnly: true },
   { to: "/transactions", label: "Transactions", adminOnly: true },
   { to: "/reports", label: "Reports", adminOnly: true },
+  { to: "/backups", label: "System Backups", adminOnly: true },
   { to: "/users", label: "Users", adminOnly: true },
 ];
 

@@ -19,7 +19,15 @@ def _to_out(req: ItemRequest) -> schemas.ItemRequestOut:
     return out
 
 
-@router.get("", response_model=list[schemas.ItemRequestOut])
+@router.get(
+    "",
+    response_model=list[schemas.ItemRequestOut],
+    summary="List item requests",
+    description=(
+        "Returns item requests. Admins see all requests; Employees see only their own. "
+        "Optionally filter by status: pending, approved, rejected, fulfilled."
+    ),
+)
 def list_requests(
     status_filter: Optional[RequestStatus] = None,
     current_user: User = Depends(get_current_user),
@@ -34,18 +42,30 @@ def list_requests(
     return [_to_out(r) for r in requests]
 
 
-@router.post("", response_model=schemas.ItemRequestOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=schemas.ItemRequestOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit an item request",
+    description=(
+        "Submits a request for an inventory item. The request is created in `pending` status. "
+        "Quantity must be greater than zero, and the item must exist."
+    ),
+)
 def create_request(
     payload: schemas.ItemRequestCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != UserRole.employee:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employees can create item requests",
+        )
+
     item = db.query(Item).filter(Item.id == payload.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
-
     req = ItemRequest(
         employee_id=current_user.id,
         item_id=payload.item_id,
@@ -58,7 +78,12 @@ def create_request(
 
 
 def _get_pending_request(request_id: int, db: Session) -> ItemRequest:
-    req = db.query(ItemRequest).filter(ItemRequest.id == request_id).first()
+    req = (
+        db.query(ItemRequest)
+        .filter(ItemRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != RequestStatus.pending:
@@ -70,6 +95,11 @@ def _get_pending_request(request_id: int, db: Session) -> ItemRequest:
     "/{request_id}/approve",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Approve a pending request",
+    description=(
+        "Admin-only. Sets the request status to `approved`. "
+        "Only requests currently in `pending` state can be approved."
+    ),
 )
 def approve_request(
     request_id: int,
@@ -78,7 +108,7 @@ def approve_request(
 ):
     req = _get_pending_request(request_id, db)
     req.status = RequestStatus.approved
-    req.admin_note = payload.admin_note
+    req.admin_note = payload.admin_note.strip() if payload.admin_note and payload.admin_note.strip() else None
     req.response_date = datetime.utcnow()
     db.commit()
     db.refresh(req)
@@ -89,6 +119,11 @@ def approve_request(
     "/{request_id}/reject",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Reject a pending request",
+    description=(
+        "Admin-only. Sets the request status to `rejected`. "
+        "Only requests currently in `pending` state can be rejected."
+    ),
 )
 def reject_request(
     request_id: int,
@@ -96,8 +131,13 @@ def reject_request(
     db: Session = Depends(get_db),
 ):
     req = _get_pending_request(request_id, db)
+    if not payload.admin_note or not payload.admin_note.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A rejection reason is required",
+        )
     req.status = RequestStatus.rejected
-    req.admin_note = payload.admin_note
+    req.admin_note = payload.admin_note.strip()
     req.response_date = datetime.utcnow()
     db.commit()
     db.refresh(req)
@@ -108,13 +148,23 @@ def reject_request(
     "/{request_id}/fulfill",
     response_model=schemas.ItemRequestOut,
     dependencies=[Depends(require_admin)],
+    summary="Fulfill an approved request",
+    description=(
+        "Admin-only. Marks an approved request as fulfilled, deducts the requested quantity from "
+        "the item's stock, and records an issued transaction. Fails with 400 if stock is insufficient."
+    ),
 )
 def fulfill_request(
     request_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    req = db.query(ItemRequest).filter(ItemRequest.id == request_id).first()
+    req = (
+        db.query(ItemRequest)
+        .filter(ItemRequest.id == request_id)
+        .with_for_update()
+        .first()
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
     if req.status != RequestStatus.approved:
@@ -122,7 +172,12 @@ def fulfill_request(
             status_code=400, detail="Only approved requests can be fulfilled"
         )
 
-    item = db.query(Item).filter(Item.id == req.item_id).first()
+    item = (
+        db.query(Item)
+        .filter(Item.id == req.item_id)
+        .with_for_update()
+        .first()
+    )
     if item.quantity_in_stock < req.quantity:
         raise HTTPException(status_code=400, detail="Not enough stock to fulfill this request")
 

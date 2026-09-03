@@ -44,10 +44,14 @@ export default function Requests() {
   const [itemsError, setItemsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState(null);
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.openCreate));
   const [form, setForm] = useState({ item_id: "", quantity: 1 });
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
   const [busyId, setBusyId] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [decision, setDecision] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(isAdmin ? "pending" : "all");
 
   useEffect(() => {
     if (location.state?.openCreate) {
@@ -60,12 +64,13 @@ export default function Requests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  async function loadRequests() {
+  async function loadRequests(announce = false) {
     setLoading(true);
     try {
       const res = await client.get("/requests");
       setRequests(res.data);
       setError("");
+      if (announce) setFeedback({ type: "success", message: "Requests refreshed." });
     } catch {
       setError("Could not load requests.");
     } finally {
@@ -73,13 +78,14 @@ export default function Requests() {
     }
   }
 
-  function loadItemOptions() {
+  function loadItemOptions(announce = false) {
     setItemsLoading(true);
     client
       .get("/items")
       .then((res) => {
         setItems(res.data);
         setItemsError("");
+        if (announce) setFeedback({ type: "success", message: "Item list refreshed." });
       })
       .catch(() => setItemsError("Could not load the item list."))
       .finally(() => setItemsLoading(false));
@@ -92,27 +98,69 @@ export default function Requests() {
 
   async function handleCreate(e) {
     e.preventDefault();
+    if (creating) return;
+    const quantity = Number(form.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setCreateError("Quantity must be a positive whole number.");
+      return;
+    }
+    setCreating(true);
+    setCreateError("");
     try {
-      await client.post("/requests", { item_id: Number(form.item_id), quantity: Number(form.quantity) });
+      await client.post("/requests", { item_id: Number(form.item_id), quantity });
       setShowCreate(false);
       setForm({ item_id: "", quantity: 1 });
-      loadRequests();
+      await loadRequests();
+      setFeedback({ type: "success", message: "Item request submitted successfully." });
     } catch (err) {
-      alert(err.response?.data?.detail || "Failed to create request");
+      const message = err.response?.data?.detail || "Failed to create request";
+      setCreateError(message);
+      setFeedback({ type: "error", message });
+    } finally {
+      setCreating(false);
     }
   }
 
-  async function handleAction(request, action) {
+  function closeCreateModal() {
+    if (creating) return;
+    setShowCreate(false);
+    setCreateError("");
+    setForm({ item_id: "", quantity: 1 });
+  }
+
+  function openDecision(request, action) {
+    setDecision({ request, action, note: "", error: "" });
+  }
+
+  async function handleDecision(e) {
+    e.preventDefault();
+    if (!decision || busyId) return;
+    const { request, action, note } = decision;
+    if (action === "reject" && !note.trim()) {
+      setDecision({ ...decision, error: "Please provide a reason for rejecting this request." });
+      return;
+    }
     setBusyId(request.id);
     try {
       if (action === "fulfill") {
         await client.post(`/requests/${request.id}/fulfill`);
       } else {
-        await client.post(`/requests/${request.id}/${action}`, {});
+        await client.post(`/requests/${request.id}/${action}`, { admin_note: note.trim() || null });
       }
-      loadRequests();
+      setDecision(null);
+      await loadRequests();
+      const actionLabels = { approve: "approved", reject: "rejected", fulfill: "fulfilled" };
+      setFeedback({
+        type: "success",
+        message: `Request ${actionLabels[action]} successfully.`,
+      });
     } catch (err) {
-      alert(err.response?.data?.detail || `Failed to ${action} request`);
+      const message = err.response?.data?.detail || `Failed to ${action} request`;
+      setDecision((current) => ({
+        ...current,
+        error: message,
+      }));
+      setFeedback({ type: "error", message });
     } finally {
       setBusyId(null);
     }
@@ -144,17 +192,32 @@ export default function Requests() {
         )}
       </div>
 
+      {feedback && (
+        <div
+          role={feedback.type === "error" ? "alert" : "status"}
+          className={`mb-4 flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm ${
+            feedback.type === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          <span>{feedback.message}</span>
+          <button type="button" onClick={() => setFeedback(null)} className="font-semibold" aria-label="Dismiss message">
+            &times;
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 flex items-center gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           <span>{error}</span>
-          <button onClick={loadRequests} className="font-medium underline hover:no-underline">
+          <button onClick={() => loadRequests(true)} className="font-medium underline hover:no-underline">
             Try again
           </button>
         </div>
       )}
 
-      {!isAdmin && (
-        <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap gap-2" aria-label="Filter requests by status">
           {STATUS_TABS.map((tab) => {
             const count = tab.key === "all" ? requests.length : statusCounts[tab.key] || 0;
             const active = statusFilter === tab.key;
@@ -166,10 +229,16 @@ export default function Requests() {
                   active ? "bg-brand-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {tab.label} {count > 0 && <span className={active ? "opacity-80" : "text-gray-400"}>({count})</span>}
+                {tab.label} <span className={active ? "opacity-80" : "text-gray-400"}>({count})</span>
               </button>
             );
           })}
+      </div>
+
+      {isAdmin && statusFilter === "pending" && !loading && !error && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">Pending review queue:</span>{" "}
+          {statusCounts.pending || 0} request{statusCounts.pending === 1 ? "" : "s"} awaiting a decision.
         </div>
       )}
 
@@ -234,7 +303,7 @@ export default function Requests() {
                   </span>
                   {r.admin_note && (
                     <p className="mt-1 max-w-[240px] text-xs italic text-gray-500" title={r.admin_note}>
-                      “{r.admin_note}”
+                      &ldquo;{r.admin_note}&rdquo;
                     </p>
                   )}
                 </td>
@@ -252,14 +321,14 @@ export default function Requests() {
                       <>
                         <button
                           disabled={busyId === r.id}
-                          onClick={() => handleAction(r, "approve")}
+                          onClick={() => openDecision(r, "approve")}
                           className="text-emerald-600 hover:underline disabled:opacity-50"
                         >
                           Approve
                         </button>
                         <button
                           disabled={busyId === r.id}
-                          onClick={() => handleAction(r, "reject")}
+                          onClick={() => openDecision(r, "reject")}
                           className="text-red-600 hover:underline disabled:opacity-50"
                         >
                           Reject
@@ -269,7 +338,7 @@ export default function Requests() {
                     {r.status === "approved" && (
                       <button
                         disabled={busyId === r.id}
-                        onClick={() => handleAction(r, "fulfill")}
+                        onClick={() => openDecision(r, "fulfill")}
                         className="text-brand-600 hover:underline disabled:opacity-50"
                       >
                         Fulfill
@@ -285,11 +354,17 @@ export default function Requests() {
       </div>
 
       {showCreate && (
-        <Modal title="New Item Request" onClose={() => setShowCreate(false)}>
+        <Modal title="New Item Request" onClose={closeCreateModal}>
           <form onSubmit={handleCreate} className="space-y-3">
+            {createError && (
+              <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                {createError}
+              </p>
+            )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Item</label>
+              <label htmlFor="request-item" className="block text-xs font-medium text-gray-600 mb-1">Item</label>
               <select
+                id="request-item"
                 required
                 disabled={itemsLoading || items.length === 0}
                 value={form.item_id}
@@ -312,17 +387,19 @@ export default function Requests() {
               {itemsError && (
                 <p className="mt-1 text-xs text-red-600">
                   {itemsError}{" "}
-                  <button type="button" onClick={loadItemOptions} className="underline hover:no-underline">
+                  <button type="button" onClick={() => loadItemOptions(true)} className="underline hover:no-underline">
                     Retry
                   </button>
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
+              <label htmlFor="request-quantity" className="block text-xs font-medium text-gray-600 mb-1">Quantity</label>
               <input
+                id="request-quantity"
                 type="number"
                 min="1"
+                step="1"
                 required
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
@@ -332,16 +409,57 @@ export default function Requests() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
+                disabled={creating}
+                onClick={closeCreateModal}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+                disabled={creating || itemsLoading || items.length === 0}
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Submit Request
+                {creating ? "Submitting..." : "Submit Request"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {decision && (
+        <Modal
+          title={`${decision.action === "fulfill" ? "Fulfill" : decision.action === "approve" ? "Approve" : "Reject"} Request`}
+          onClose={() => !busyId && setDecision(null)}
+        >
+          <form onSubmit={handleDecision} className="space-y-4">
+            <p className="text-sm text-gray-600">
+              {decision.action === "fulfill"
+                ? `Issue ${decision.request.quantity} × ${decision.request.item_name}?`
+                : `${decision.action === "approve" ? "Approve" : "Reject"} ${decision.request.item_name} for ${decision.request.employee_name}?`}
+            </p>
+            {decision.action !== "fulfill" && (
+              <div>
+                <label htmlFor="admin-note" className="mb-1 block text-xs font-medium text-gray-600">
+                  Admin note {decision.action === "reject" ? "(required)" : "(optional)"}
+                </label>
+                <textarea
+                  id="admin-note"
+                  rows="3"
+                  required={decision.action === "reject"}
+                  value={decision.note}
+                  onChange={(e) => setDecision({ ...decision, note: e.target.value, error: "" })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            {decision.error && <p role="alert" className="text-sm text-red-600">{decision.error}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={Boolean(busyId)} onClick={() => setDecision(null)} className="rounded-md border px-4 py-2 text-sm disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={Boolean(busyId)} className="rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {busyId ? "Saving..." : "Confirm"}
               </button>
             </div>
           </form>

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from openpyxl.styles import PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
@@ -71,10 +72,13 @@ def transactions_timeseries(days: int = 30, db: Session = Depends(get_db)):
 REPORT_BUILDERS = {}
 
 
-def _inventory_rows(db: Session):
+def _inventory_rows(db: Session, start_date: str = None, end_date: str = None, filter_val: str = None):
     header = ["ID", "Name", "Category", "In Stock", "Reorder Level", "Unit Price", "Low Stock?"]
     rows = [header]
-    for item in db.query(Item).order_by(Item.name).all():
+    query = db.query(Item).order_by(Item.name)
+    if filter_val == "low_stock":
+        query = query.filter(Item.quantity_in_stock <= Item.reorder_level)
+    for item in query.all():
         rows.append(
             [
                 item.id,
@@ -89,10 +93,18 @@ def _inventory_rows(db: Session):
     return rows
 
 
-def _requests_rows(db: Session):
+def _requests_rows(db: Session, start_date: str = None, end_date: str = None, filter_val: str = None):
     header = ["ID", "Employee", "Item", "Qty", "Status", "Requested On"]
     rows = [header]
-    for r in db.query(ItemRequest).order_by(ItemRequest.request_date.desc()).all():
+    query = db.query(ItemRequest).order_by(ItemRequest.request_date.desc())
+    if start_date:
+        query = query.filter(ItemRequest.request_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(ItemRequest.request_date < datetime.fromisoformat(end_date) + timedelta(days=1))
+    if filter_val and filter_val != "all":
+        query = query.filter(ItemRequest.status == filter_val)
+        
+    for r in query.all():
         rows.append(
             [
                 r.id,
@@ -106,19 +118,32 @@ def _requests_rows(db: Session):
     return rows
 
 
-def _transactions_rows(db: Session):
-    header = ["ID", "Item", "Type", "Qty", "Supplier", "Date", "Reference"]
+def _transactions_rows(db: Session, start_date: str = None, end_date: str = None, filter_val: str = None):
+    header = ["ID", "Item", "Type", "Qty", "Supplier", "Date", "Ref/Notes", "Cost"]
     rows = [header]
-    for t in db.query(Transaction).order_by(Transaction.transaction_date.desc()).all():
+    query = db.query(Transaction).order_by(Transaction.transaction_date.desc())
+    if start_date:
+        query = query.filter(Transaction.transaction_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(Transaction.transaction_date < datetime.fromisoformat(end_date) + timedelta(days=1))
+    if filter_val and filter_val != "all":
+        query = query.filter(Transaction.type == filter_val)
+        
+    for t in query.all():
+        ref = t.reference_no or ""
+        notes = getattr(t, "notes", "") or ""
+        ref_notes = f"{ref} {notes}".strip()
+        
         rows.append(
             [
                 t.id,
-                t.item.name if t.item else "-",
+                (t.item.name[:20] + "...") if t.item and len(t.item.name) > 20 else (t.item.name if t.item else "-"),
                 t.type.value,
                 t.quantity,
-                t.supplier.name if t.supplier else "-",
-                t.transaction_date.strftime("%Y-%m-%d %H:%M"),
-                t.reference_no or "-",
+                (t.supplier.name[:15] + "...") if t.supplier and len(t.supplier.name) > 15 else (t.supplier.name if t.supplier else "-"),
+                t.transaction_date.strftime("%Y-%m-%d"),
+                ref_notes[:25] + "..." if len(ref_notes) > 25 else (ref_notes or "-"),
+                f"${float(getattr(t, 'total_cost', 0.0)):.2f}"
             ]
         )
     return rows
@@ -132,19 +157,34 @@ REPORT_BUILDERS = {
 
 
 @router.get("/{report_name}/pdf")
-def export_pdf(report_name: str, db: Session = Depends(get_db)):
+def export_pdf(
+    report_name: str, 
+    start_date: str = None, 
+    end_date: str = None, 
+    filter_val: str = None,
+    db: Session = Depends(get_db)
+):
     if report_name not in REPORT_BUILDERS:
         raise HTTPException(status_code=404, detail="Unknown report")
     title, builder = REPORT_BUILDERS[report_name]
-    rows = builder(db)
+    rows = builder(db, start_date, end_date, filter_val)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
     styles = getSampleStyleSheet()
+    
+    total_records = len(rows) - 1
+    summary = f"Total Records: {total_records}"
+    if start_date and end_date:
+        summary += f" | Period: {start_date} to {end_date}"
+    if filter_val and filter_val != "all":
+        summary += f" | Filter: {filter_val.capitalize()}"
+
     elements = [
         Paragraph("Kolonna StoreTrack", styles["Title"]),
         Paragraph(title, styles["Heading2"]),
         Paragraph(datetime.utcnow().strftime("Generated on %Y-%m-%d %H:%M UTC"), styles["Normal"]),
+        Paragraph(summary, styles["Normal"]),
         Spacer(1, 0.5 * cm),
     ]
     table = Table(rows, repeatRows=1)
@@ -154,6 +194,8 @@ def export_pdf(report_name: str, db: Session = Depends(get_db)):
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
             ]
@@ -171,19 +213,41 @@ def export_pdf(report_name: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{report_name}/excel")
-def export_excel(report_name: str, db: Session = Depends(get_db)):
+def export_excel(
+    report_name: str, 
+    start_date: str = None, 
+    end_date: str = None, 
+    filter_val: str = None,
+    db: Session = Depends(get_db)
+):
     if report_name not in REPORT_BUILDERS:
         raise HTTPException(status_code=404, detail="Unknown report")
     title, builder = REPORT_BUILDERS[report_name]
-    rows = builder(db)
+    rows = builder(db, start_date, end_date, filter_val)
 
     wb = Workbook()
     ws = wb.active
     ws.title = title[:31]
+    
     for row in rows:
         ws.append(row)
+        
     for cell in ws[1]:
-        cell.font = cell.font.copy(bold=True)
+        cell.font = cell.font.copy(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="1F2937", end_color="1F2937", fill_type="solid")
+    
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try: 
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+        ws.column_dimensions[column].width = min(max_length + 2, 50)
+        
+    ws.freeze_panes = "A2"
 
     buffer = io.BytesIO()
     wb.save(buffer)
